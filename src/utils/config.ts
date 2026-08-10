@@ -38,7 +38,7 @@ const envSchema = z.object({
   SOCIAL_NARRATIVE_INTERVAL: z.coerce.number().default(10),
   MAX_DAILY_LOSS_PCT: z.coerce.number().default(10),
   MAX_DRAWDOWN_PCT: z.coerce.number().default(25),
-  MIN_CONVICTION_SCORE: z.coerce.number().default(65),
+  MIN_CONVICTION_SCORE: z.coerce.number().default(55),
 });
 
 const parsed = envSchema.safeParse(process.env);
