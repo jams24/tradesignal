@@ -30,6 +30,26 @@ export class ListingMonitorAgent {
     try {
       const exchangeIds: ExchangeId[] = ["binance", "mexc", "bybit", "bitget", "okx", "gate"];
 
+      // Re-populate knownPairs from previously saved listing signals in DB
+      if (!this.seeded) {
+        try {
+          const savedListings = await prisma.signal.findMany({
+            where: { type: "LISTING" },
+            select: { symbol: true, exchange: true, catalyst: true },
+          });
+          for (const s of savedListings) {
+            if (s.exchange) {
+              const marketType = s.catalyst?.includes("PERPETUAL") ? "perp" : "spot";
+              this.knownPairs.add(`${s.exchange}:api:${s.symbol}`);
+              if (s.catalyst?.includes("announcement")) {
+                this.knownPairs.add(`${s.exchange}:announcement:${s.symbol}`);
+              }
+            }
+          }
+          logger.info(`Loaded ${savedListings.length} existing listing signals into cache`);
+        } catch { /* best effort */ }
+      }
+
       // Seed known pairs on first run (load all existing markets without alerting)
       if (!this.seeded) {
         for (const exchangeId of exchangeIds) {
