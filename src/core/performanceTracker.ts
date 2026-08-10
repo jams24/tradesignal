@@ -33,30 +33,40 @@ export class PerformanceTracker {
         orderBy: { createdAt: "asc" },
       });
 
-      // Deduplicate — first signal per symbol wins
+      // Deduplicate + filter: only tradeable symbols with alert price
       const seen = new Set<string>();
       const uniqueSignals = dbSignals.filter(s => {
         const key = s.symbol;
         if (seen.has(key)) return false;
         seen.add(key);
+        // Filter out contract addresses (40+ char hex) and symbols without price
+        if (!s.price) return false;
+        if (s.symbol.length > 20) return false;
+        if (s.symbol.includes("..")) return false;
+        if (s.symbol === "TOKEN" || s.symbol === "NEW_TOKEN") return false;
         return true;
       });
 
-      // Fetch current prices for all unique symbols
-      const symbols = [...new Set(uniqueSignals.map(s => s.symbol))];
+      // Fetch current prices — try Binance, Gate, Bybit
+      const symbols = uniqueSignals.map(s => s.symbol);
       const priceMap = new Map<string, number>();
 
-      // Try to get prices from Binance first (largest exchange)
-      const binance = cexProvider.getExchange("binance");
-      if (binance) {
+      const exchanges = ["binance", "gate", "bybit"] as const;
+      for (const exId of exchanges) {
+        const ex = cexProvider.getExchange(exId);
+        if (!ex) continue;
         try {
-          const usdtSymbols = symbols.map(s => `${s}/USDT`).slice(0, 50);
-          const tickers = await binance.fetchTickers(usdtSymbols);
+          const usdtSymbols = symbols
+            .filter(s => !priceMap.has(s))
+            .map(s => `${s}/USDT`)
+            .slice(0, 30);
+          if (usdtSymbols.length === 0) break;
+          const tickers = await ex.fetchTickers(usdtSymbols);
           for (const [pair, ticker] of Object.entries(tickers as Record<string, any>)) {
-            const sym = pair.replace("/USDT", "");
+            const sym = pair.replace("/USDT", "").replace("/USDT:USDT", "");
             if (ticker.last) priceMap.set(sym, ticker.last);
           }
-        } catch { /* best effort */ }
+        } catch { /* next exchange */ }
       }
 
       // Build tracked signals

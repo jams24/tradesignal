@@ -626,28 +626,34 @@ export class TelegramAlertBot {
 
       if (tracked.length === 0) {
         await this.bot.sendMessage(chatId,
-          "No signals tracked yet. Signals are tracked from their first alert — wait for the pipeline to generate signals with prices.",
+          "No priced signals tracked yet. Only signals with an entry price are shown. DEX-only signals and Solana addresses are filtered out.\n\nWait for funding rate or listing signals — those include prices.",
           { reply_markup: this.mainMenuKeyboard() });
         return;
       }
 
       const parts: string[] = [];
       parts.push(`\u{1F4C8} <b>Signal Performance</b>`);
-      parts.push(`Total signals: ${summary.total} | \u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down`);
+      parts.push(`Total: ${summary.total} | \u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down | \u26AA ${summary.total - summary.profitable - summary.unprofitable} pending`);
       parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}%`);
       parts.push(`TP1 hit: ${summary.tp1Hit} | SL hit: ${summary.slHit}`);
       parts.push("");
 
-      // Show top 10 tracked signals
-      for (const s of tracked.slice(0, 10)) {
+      const priced = tracked.filter(s => s.pnlPct !== null);
+      const unpriced = tracked.filter(s => s.pnlPct === null);
+
+      for (const s of [...priced.slice(0, 8), ...unpriced.slice(0, 2)]) {
         const emoji = s.pnlPct === null ? "\u26AA" :
                        s.pnlPct > 0 ? "\u{1F7E2}" : "\u{1F534}";
-        const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "pending";
-        const priceStr = s.alertPrice ? ` $${s.alertPrice.toFixed(4)}` : "";
-        const curStr = s.currentPrice ? ` \u2192 $${s.currentPrice.toFixed(4)}` : "";
+        const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "no price";
+        const entryStr = s.alertPrice ? ` @ $${s.alertPrice.toFixed(6)}` : "";
+        const curStr = s.currentPrice ? ` → $${s.currentPrice.toFixed(6)}` : "";
         const flags = [s.hitTp1 ? "\u2705TP1" : "", s.hitSl ? "\u{1F6D1}SL" : ""].filter(Boolean).join(" ");
 
-        parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr} | ${s.age}${flags ? " " + flags : ""}`);
+        parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr}${entryStr}${curStr} | ${s.age}${flags ? " " + flags : ""}`);
+      }
+
+      if (tracked.length > 10) {
+        parts.push(`\n... and ${tracked.length - 10} more`);
       }
 
       await this.bot.sendMessage(chatId, parts.join("\n"),
