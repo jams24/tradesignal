@@ -25,35 +25,50 @@ export class OnchainIntelAgent {
     const candidates: OnchainSignal[] = [];
 
     try {
-      // 1. Exchange netflows (bulk USDT/USDC transfers)
+      // 1. Exchange netflows (bulk stablecoin + ETH/BTC transfers)
       const exchangeFlows = await onchainProvider.fetchExchangeNetflows("ethereum");
 
       for (const flow of exchangeFlows) {
         if (this.processedTxHashes.has(flow.token + flow.amount)) continue;
         this.processedTxHashes.add(flow.token + flow.amount);
 
-        if (flow.direction === "outflow" && flow.valueUsd > 50000) {
-          candidates.push({
-            symbol: flow.symbol,
-            chain: flow.chain,
-            signalType: "EXCHANGE_OUTFLOW",
-            direction: "long",
-            confidence: 65,
-            score: 60,
-            details: `${flow.symbol} outflow from ${flow.exchange}: $${(flow.amount / 1000000).toFixed(1)}M`,
-            valueUsd: flow.valueUsd,
-          });
-        } else if (flow.direction === "inflow" && flow.valueUsd > 200000) {
-          candidates.push({
-            symbol: flow.symbol,
-            chain: flow.chain,
-            signalType: "EXCHANGE_INFLOW",
-            direction: "short",
-            confidence: 60,
-            score: 55,
-            details: `${flow.symbol} inflow to ${flow.exchange}: $${(flow.amount / 1000000).toFixed(1)}M`,
-            valueUsd: flow.valueUsd,
-          });
+        const isStable = flow.symbol === "USDT" || flow.symbol === "USDC";
+        const isAsset = flow.symbol === "ETH" || flow.symbol === "BTC";
+
+        if (flow.direction === "outflow") {
+          // Outflow = withdrawal from exchange
+          // Stablecoins leaving = neutral/slightly bearish for stablecoin demand
+          // ETH/BTC leaving = BULLISH (whale accumulation, moving to cold storage/DeFi)
+          const threshold = isAsset ? 10 : 50000;
+          if (flow.valueUsd > threshold) {
+            candidates.push({
+              symbol: flow.symbol,
+              chain: flow.chain,
+              signalType: "EXCHANGE_OUTFLOW",
+              direction: isAsset ? "long" : "long",
+              confidence: isAsset ? 75 : 65,
+              score: isAsset ? 70 : 60,
+              details: `${isAsset ? "🚀 " : ""}${flow.symbol} WITHDRAWAL from ${flow.exchange}: $${(flow.amount).toLocaleString(undefined, {maximumFractionDigits: 2})}`,
+              valueUsd: flow.valueUsd,
+            });
+          }
+        } else if (flow.direction === "inflow") {
+          // Inflow = deposit to exchange
+          // Stablecoins entering = buying power, bullish for market
+          // ETH/BTC entering = BEARISH (whale preparing to sell)
+          const threshold = isAsset ? 25 : 200000;
+          if (flow.valueUsd > threshold) {
+            candidates.push({
+              symbol: flow.symbol,
+              chain: flow.chain,
+              signalType: "EXCHANGE_INFLOW",
+              direction: isAsset ? "short" : "long",
+              confidence: isAsset ? 70 : 60,
+              score: isAsset ? 65 : 55,
+              details: `${isAsset ? "⚠️ " : ""}${flow.symbol} DEPOSIT to ${flow.exchange}: $${(flow.amount).toLocaleString(undefined, {maximumFractionDigits: 2})}`,
+              valueUsd: flow.valueUsd,
+            });
+          }
         }
       }
 
@@ -129,11 +144,13 @@ export class OnchainIntelAgent {
   }
 
   private buildSignal(c: OnchainSignal): TradeSignal {
-    const flowDesc = c.signalType === "EXCHANGE_OUTFLOW"
-      ? `${c.symbol} WITHDRAWAL from ${c.details.split(": ")[1] || ""}`
-      : c.signalType === "EXCHANGE_INFLOW"
-        ? `${c.symbol} DEPOSIT to ${c.details.split(": ")[1] || ""}`
-        : c.details;
+    const flowDesc = c.details;
+
+    const tokenTypeHint = c.symbol === "ETH" || c.symbol === "BTC"
+      ? `Large ${c.symbol} movement detected. ${c.direction === "long" ? "Withdrawals from exchanges suggest whale accumulation — historically precedes price increases." : "Deposits to exchanges suggest whales preparing to sell — historically precedes price drops."}`
+      : c.symbol === "USDT" || c.symbol === "USDC"
+        ? `${c.symbol} flow detected. ${c.direction === "long" ? "Stablecoins entering exchanges = buying power deploying — bullish for market." : "Stablecoins leaving exchanges — capital rotating out, neutral to slightly bearish."}`
+        : "";
 
     return {
       type: "ONCHAIN",
@@ -142,12 +159,12 @@ export class OnchainIntelAgent {
       direction: c.direction,
       confidence: c.confidence,
       score: c.score,
-      leverage: 2,
+      leverage: c.symbol === "ETH" || c.symbol === "BTC" ? 3 : 2,
       catalyst: flowDesc,
-      thesis: "",
+      thesis: tokenTypeHint,
       sources: ["ONCHAIN"],
       agentScores: { ONCHAIN_INTEL: c.score },
-      exchangeNetflow: c.signalType.includes("EXCHANGE") ? c.valueUsd : undefined,
+      exchangeNetflow: c.direction === "long" ? c.valueUsd : -c.valueUsd,
       rawData: {
         signalType: c.signalType,
         valueUsd: c.valueUsd,

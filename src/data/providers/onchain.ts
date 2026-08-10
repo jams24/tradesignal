@@ -45,6 +45,15 @@ const RPC_LIST: Record<string, string[]> = {
 
 const USDT_ETH = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const USDC_ETH = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+const WBTC = "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599";
+
+const TRACKED_TOKENS: Record<string, string> = {
+  [USDT_ETH.toLowerCase()]: "USDT",
+  [USDC_ETH.toLowerCase()]: "USDC",
+  [WETH.toLowerCase()]: "ETH",
+  [WBTC.toLowerCase()]: "BTC",
+};
 
 const KNOWN_EXCHANGES: Record<string, string> = {
   "0x28c6c06298d514db089934071355e5743bf21d60": "binance",
@@ -116,7 +125,7 @@ export class OnchainDataProvider {
       const response = await this.rpcCall(chain, "eth_getLogs", [{
         fromBlock,
         toBlock,
-        address: [USDT_ETH, USDC_ETH],
+        address: [USDT_ETH, USDC_ETH, WETH, WBTC],
         topics: [transferTopic],
       }]);
 
@@ -142,12 +151,18 @@ export class OnchainDataProvider {
         if (!fromExchange && !toExchange) continue;
 
         const value = parseInt(log.data || "0x0", 16);
-        const tokenSymbol = log.address.toLowerCase() === USDT_ETH.toLowerCase() ? "USDT" : "USDC";
-        const decimals = tokenSymbol === "USDT" ? 6 : 6;
+        const tokenSymbol = TRACKED_TOKENS[log.address.toLowerCase()] || "TOKEN";
+        const decimals = tokenSymbol === "ETH" || tokenSymbol === "BTC" ? 18 : 6;
         const amount = value / Math.pow(10, decimals);
 
-        // Only log significant moves (> $50k)
-        if (amount < 50000) continue;
+        // For ETH/BTC: > 10 ETH/BTC | For stables: > $50k
+        const minAmount = (tokenSymbol === "ETH" || tokenSymbol === "BTC") ? 10 : 50000;
+        if (amount < minAmount) continue;
+
+        // Estimate USD value
+        let valueUsd = amount;
+        if (tokenSymbol === "ETH") valueUsd = amount * 2500;
+        else if (tokenSymbol === "BTC") valueUsd = amount * 60000;
 
         flows.push({
           chain,
@@ -155,7 +170,7 @@ export class OnchainDataProvider {
           token: log.address,
           symbol: tokenSymbol,
           amount,
-          valueUsd: amount,
+          valueUsd,
           direction: toExchange ? "inflow" : "outflow",
           timestamp: Date.now(),
         });
