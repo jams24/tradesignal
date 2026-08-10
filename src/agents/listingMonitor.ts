@@ -158,8 +158,13 @@ export class ListingMonitorAgent {
       );
 
       const articles = data?.data?.catalogs?.[0]?.articles || [];
+      const now = Date.now();
       for (const article of articles) {
         const title = article.title || "";
+        // Skip articles older than 2 days (172800000 ms)
+        const releaseDate = article.releaseDate || 0;
+        if (releaseDate > 0 && now - releaseDate > 172800000) continue;
+
         const listingMatch = title.match(/(?:Binance\s+)?(?:Will\s+List|Lists?|Launches?)\s+(\w+)/i);
         const perpetualMatch = title.match(/(?:USD[Ⓢ]-M\s+)?(\w+)\s+(?:Perpetual|PERP)/i);
         const futuresMatch = title.match(/(?:Futures\s+)?(?:Will\s+List|Lists?)\s+(\w+)/i);

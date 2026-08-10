@@ -224,7 +224,7 @@ export class TelegramAlertBot {
     try {
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const listings = await prisma.signal.findMany({
-        where: { type: "MEME", createdAt: { gte: oneDayAgo } },
+        where: { type: "LISTING", createdAt: { gte: oneDayAgo } },
         orderBy: { createdAt: "desc" },
         take: 10,
       });
@@ -581,7 +581,7 @@ export class TelegramAlertBot {
     const parts: string[] = [
       `${typeEmoji} <b>${h(signal.type)}</b> — ${directionEmoji}`,
       `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`,
-      `\u{1F48E} <b>${h(signal.symbol)}</b>${signal.chain !== "unknown" ? ` (${h(signal.chain)})` : ""}`,
+      `\u{1F48E} <b>${h(signal.symbol)}</b>${signal.exchange ? ` on ${h(signal.exchange.toUpperCase())}` : ""}${signal.chain !== "unknown" ? ` (${h(signal.chain)})` : ""}`,
     ];
 
     if (signal.price) parts.push(`\u{1F4B0} <b>Price</b>: $${formatPrice(signal.price)}`);
