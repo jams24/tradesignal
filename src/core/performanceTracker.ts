@@ -51,20 +51,25 @@ export class PerformanceTracker {
       const symbols = uniqueSignals.map(s => s.symbol);
       const priceMap = new Map<string, number>();
 
-      const exchanges = ["binance", "gate", "bybit"] as const;
+      const exchanges = ["binance", "gate", "bybit", "mexc", "bitget"] as const;
       for (const exId of exchanges) {
         const ex = cexProvider.getExchange(exId);
         if (!ex) continue;
         try {
-          const usdtSymbols = symbols
-            .filter(s => !priceMap.has(s))
-            .map(s => `${s}/USDT`)
-            .slice(0, 30);
-          if (usdtSymbols.length === 0) break;
-          const tickers = await ex.fetchTickers(usdtSymbols);
-          for (const [pair, ticker] of Object.entries(tickers as Record<string, any>)) {
-            const sym = pair.replace("/USDT", "").replace("/USDT:USDT", "");
-            if (ticker.last) priceMap.set(sym, ticker.last);
+          const remaining = symbols.filter(s => !priceMap.has(s));
+          if (remaining.length === 0) break;
+
+          // Try both spot (/USDT) and perp (/USDT:USDT) formats
+          const spotPairs = remaining.map(s => `${s}/USDT`);
+          const perpPairs = remaining.map(s => `${s}/USDT:USDT`);
+          const allPairs = [...spotPairs, ...perpPairs].slice(0, 50);
+
+          const tickers = await ex.fetchTickers(allPairs) as Record<string, any>;
+          for (const [pair, ticker] of Object.entries(tickers)) {
+            const sym = pair.replace("/USDT:USDT", "").replace("/USDT", "");
+            if (ticker.last && !priceMap.has(sym)) {
+              priceMap.set(sym, ticker.last);
+            }
           }
         } catch { /* next exchange */ }
       }
