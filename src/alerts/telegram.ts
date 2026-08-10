@@ -6,6 +6,7 @@ import { prisma } from "../db/prisma";
 import { executionAgent } from "../agents/execution";
 import { socialProvider } from "../data/providers/social";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
+import { onchainIntelAgent } from "../agents/onchainIntel";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
@@ -43,6 +44,7 @@ export class TelegramAlertBot {
     this.bot.onText(/\/whales/, (msg) => this.handleWhales(msg));
     this.bot.onText(/\/pnl/, (msg) => this.handlePnl(msg));
     this.bot.onText(/\/status/, (msg) => this.handleStatus(msg));
+    this.bot.onText(/\/onchain/, (msg) => this.handleOnchain(msg));
     this.bot.onText(/\/positions/, (msg) => this.handlePositions(msg));
     this.bot.onText(/\/exec (.+)/, (msg, match) => this.handleExecApprove(msg, match));
     this.bot.onText(/\/reject (.+)/, (msg, match) => this.handleExecReject(msg, match));
@@ -78,6 +80,9 @@ export class TelegramAlertBot {
           await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_funding") {
           await this.handleFunding(query.message!);
+          await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "cmd_onchain") {
+          await this.handleOnchain(query.message!);
           await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
@@ -506,6 +511,43 @@ export class TelegramAlertBot {
     }
   }
 
+  private async handleOnchain(msg: TelegramBot.Message): Promise<void> {
+    const chatId = msg.chat.id.toString();
+    await this.bot.sendMessage(chatId, "\u{1F50D} Scanning Ethereum blockchain for exchange flows...");
+
+    try {
+      const result = await onchainIntelAgent.analyze();
+
+      if (result.signals.length === 0) {
+        await this.bot.sendMessage(chatId,
+          "\u2705 Scan complete — no significant exchange flows detected in the last 20 minutes.\n\nLarge transfers (>$50k USDT/USDC or >10 ETH/BTC) will appear here automatically.",
+          { reply_markup: this.mainMenuKeyboard() });
+        return;
+      }
+
+      // Group by symbol
+      const bySymbol: Record<string, any[]> = {};
+      for (const s of result.signals) {
+        if (!bySymbol[s.symbol]) bySymbol[s.symbol] = [];
+        bySymbol[s.symbol].push(s);
+      }
+
+      const lines: string[] = [];
+      for (const [sym, signals] of Object.entries(bySymbol)) {
+        for (const s of signals.slice(0, 3)) {
+          const dirEmoji = s.direction === "long" ? "\u{1F7E2} LONG" : "\u{1F534} SHORT";
+          lines.push(`${dirEmoji} <b>${sym}</b> | ${escapeHtml(s.catalyst)}`);
+        }
+      }
+
+      await this.bot.sendMessage(chatId,
+        `\u26D3 <b>On-Chain Activity</b> (${result.signals.length} signals)\n\n${lines.join("\n")}\n\n_Data: Ethereum blockchain via free RPC. Flows >$50k in last ~20 min._`,
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
+    } catch (err: any) {
+      await this.bot.sendMessage(chatId, `Error: ${err.message}`);
+    }
+  }
+
   // ─────────────────── CALLBACK HANDLERS ───────────────────
 
   private async handleExecCallback(query: TelegramBot.CallbackQuery): Promise<void> {
@@ -711,6 +753,9 @@ export class TelegramAlertBot {
         ],
         [
           { text: "\u{1F4B8} Funding", callback_data: "cmd_funding" },
+          { text: "\u26D3 On-Chain", callback_data: "cmd_onchain" },
+        ],
+        [
           { text: "\u{1F4B0} P&L", callback_data: "cmd_pnl" },
         ],
         [
