@@ -26,6 +26,7 @@ export class TelegramAlertBot {
   private chatId: string;
   private adminChatId: string;
   private scanCooldown = new Map<string, number>();
+  private autoOrdersEnabled = true;
 
   constructor() {
     this.bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -55,6 +56,7 @@ export class TelegramAlertBot {
     this.bot.onText(/\/funding/, (msg) => this.handleFunding(msg));
     this.bot.onText(/\/dex/, (msg) => this.handleDex(msg));
     this.bot.onText(/\/perf/, (msg) => this.handlePerformance(msg));
+    this.bot.onText(/\/settings/, (msg) => this.handleSettings(msg));
   }
 
   private registerCallbacks(): void {
@@ -99,6 +101,16 @@ export class TelegramAlertBot {
           const offset = parseInt(data.replace("perf_more_", "")) || 0;
           await this.sendPerformancePage(query.message!.chat.id.toString(), offset);
           await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "toggle_orders") {
+          this.autoOrdersEnabled = !this.autoOrdersEnabled;
+          const status = this.autoOrdersEnabled ? "ON ✅" : "OFF ❌";
+          await this.bot.answerCallbackQuery(query.id, { text: `Auto orders: ${status}` });
+          try {
+            await this.bot.editMessageReplyMarkup(
+              { inline_keyboard: this.settingsKeyboard() },
+              { chat_id: query.message!.chat.id, message_id: query.message!.message_id },
+            );
+          } catch { /* ok if can't edit */ }
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
           await this.bot.answerCallbackQuery(query.id);
@@ -756,6 +768,30 @@ export class TelegramAlertBot {
     }
   }
 
+  private async handleSettings(msg: TelegramBot.Message): Promise<void> {
+    await this.bot.sendMessage(msg.chat.id,
+      `\u2699 <b>Settings</b>\n\n` +
+      `Auto execution orders: ${this.autoOrdersEnabled ? "✅ ON" : "❌ OFF"}\n` +
+      `When ON, approved signals auto-create an order with Approve/Reject buttons.\n` +
+      `When OFF, signals display without execution options.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: this.settingsKeyboard() },
+      },
+    );
+  }
+
+  private settingsKeyboard(): TelegramBot.InlineKeyboardButton[][] {
+    return [
+      [{ text: this.autoOrdersEnabled ? "🔔 Auto Orders: ON" : "🔕 Auto Orders: OFF", callback_data: "toggle_orders" }],
+      [{ text: "📋 Menu", callback_data: "menu" }],
+    ];
+  }
+
+  isAutoOrdersEnabled(): boolean {
+    return this.autoOrdersEnabled;
+  }
+
   // ─────────────────── SIGNAL ALERT (pipeline output) ───────────────────
 
   async sendSignalAlert(signal: TradeSignal): Promise<string | null> {
@@ -801,13 +837,17 @@ export class TelegramAlertBot {
     const message = parts.join("\n");
 
     try {
-      const keyboard: TelegramBot.InlineKeyboardButton[][] = [[
-        { text: "\u2705 Execute Long", callback_data: `exec_${signal.symbol}_long` },
-        { text: "\u274C Dismiss", callback_data: `dismiss_${signal.symbol}` },
-      ]];
-
-      if (signal.direction === "short") {
-        keyboard[0][0] = { text: "\u2705 Execute Short", callback_data: `exec_${signal.symbol}_short` };
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+      if (this.autoOrdersEnabled) {
+        keyboard.push([
+          { text: "\u2705 Execute Long", callback_data: `exec_${signal.symbol}_long` },
+          { text: "\u274C Dismiss", callback_data: `dismiss_${signal.symbol}` },
+        ]);
+        if (signal.direction === "short") {
+          keyboard[0][0] = { text: "\u2705 Execute Short", callback_data: `exec_${signal.symbol}_short` };
+        }
+      } else {
+        keyboard.push([{ text: "\u274C Dismiss", callback_data: `dismiss_${signal.symbol}` }]);
       }
 
       const sent = await this.bot.sendMessage(this.chatId, message, {

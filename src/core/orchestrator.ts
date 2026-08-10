@@ -173,8 +173,8 @@ class Orchestrator {
         // Send risk assessment
         await telegramBot.sendRiskAssessment(signal, risk);
 
-        // Create execution order if approved
-        if (risk.approved && signal.exchange) {
+        // Create execution order if approved AND auto-orders enabled
+        if (risk.approved && signal.exchange && telegramBot.isAutoOrdersEnabled()) {
           const order = executionAgent.createOrder(
             signal,
             risk.maxPositionSize,
