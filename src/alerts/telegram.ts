@@ -110,7 +110,7 @@ export class TelegramAlertBot {
 
   private async handleStart(msg: TelegramBot.Message): Promise<void> {
     const text =
-      "\u{1F680} *TradeSignal* — Multi-Agent Alpha Bot\n\n" +
+      "\u{1F680} <b>TradeSignal</b> — Multi-Agent Alpha Bot\n\n" +
       "7 AI agents scan markets 24/7:\n" +
       "\u{1F438} Meme Scout | \u{1F40B} Smart Money | \u{26D3} On-Chain Intel\n" +
       "\u{1F4CA} Technical Alpha | \u{1F4F1} Social Narrative | \u{1F9E0} Research\n" +
@@ -118,60 +118,60 @@ export class TelegramAlertBot {
       "_High-confidence signals auto-posted. Use commands below._";
 
     await this.bot.sendMessage(msg.chat.id, text, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: this.mainMenuKeyboard(),
     });
   }
 
   private async handleHelp(msg: TelegramBot.Message): Promise<void> {
     const text =
-      "\u{1F916} *TradeSignal — Multi-Agent Crypto Trading Bot*\n\n" +
-      "\u{1F9E0} *8 AI Agents* scan markets 24/7 across 6 exchanges + 5 blockchains:\n\n" +
-      "\u{1F4E1} *Listing Monitor* (every 60s)\n" +
+      "\u{1F916} <b>TradeSignal — Multi-Agent Crypto Trading Bot</b>\n\n" +
+      "\u{1F9E0} <b>8 AI Agents</b> scan markets 24/7 across 6 exchanges + 5 blockchains:\n\n" +
+      "\u{1F4E1} <b>Listing Monitor</b> (every 60s)\n" +
       "  \u2022 Detects new spot/perpetual listings on Binance, MEXC, Bybit, Bitget, OKX, Gate\n" +
       "  \u2022 Scrapes Binance announcement feed for upcoming listings\n" +
       "  \u2022 Data: CCXT API + Binance CMS API\n\n" +
-      "\u{1F438} *Meme Scout* (every 1 min)\n" +
+      "\u{1F438} <b>Meme Scout</b> (every 1 min)\n" +
       "  \u2022 Detects new DEX pairs on Solana (Raydium/Orca) and Base (Uniswap)\n" +
       "  \u2022 Scores deployer history, LP lock/burn, sniper activity, age\n" +
       "  \u2022 Data: Helius RPC (Solana), Base/ETH RPC\n\n" +
-      "\u{1F40B} *Smart Money* (every 2 min)\n" +
+      "\u{1F40B} <b>Smart Money</b> (every 2 min)\n" +
       "  \u2022 Tracks high-ROI wallets across chains\n" +
       "  \u2022 Fires when 2+ profitable wallets buy same token\n" +
       "  \u2022 Weighted by wallet ROI, win rate, trade count\n" +
       "  \u2022 Data: PostgreSQL (wallet trade history)\n\n" +
-      "\u{26D3} *On-Chain Intel* (every 5 min)\n" +
+      "\u{26D3} <b>On-Chain Intel</b> (every 5 min)\n" +
       "  \u2022 Monitors USDT/USDC flows to/from exchange wallets (eth_getLogs)\n" +
       "  \u2022 Tracks stablecoin bridge flows (LayerZero, Wormhole, Stargate)\n" +
       "  \u2022 Token unlock schedules via DefiLlama\n" +
       "  \u2022 Data: Free public RPCs (Cloudflare ETH, Binance BSC, Base)\n\n" +
-      "\u{1F4CA} *Technical Alpha* (every 5 min)\n" +
+      "\u{1F4CA} <b>Technical Alpha</b> (every 5 min)\n" +
       "  \u2022 Scans 1200+ perpetual pairs across 6 exchanges\n" +
       "  \u2022 Multi-timeframe: RSI, EMA20/50, Bollinger Bands, MACD, ATR\n" +
       "  \u2022 Volume spike detection, funding rate extremes\n" +
       "  \u2022 Generates entry/TP1-TP3/SL with ATR-based levels\n" +
       "  \u2022 Data: CCXT (6 exchanges)\n\n" +
-      "\u{1F4F1} *Social Narrative* (every 10 min)\n" +
+      "\u{1F4F1} <b>Social Narrative</b> (every 10 min)\n" +
       "  \u2022 Fetches CoinGecko trending (top 15)\n" +
       "  \u2022 Searches Twitter/X for \\$cashtag mentions + engagement\n" +
       "  \u2022 Detects KOL activity (known influencer accounts)\n" +
       "  \u2022 Tracks market narratives: AI, Memes, RWA, DePIN, Gaming, L2, DeFi, Solana\n" +
       "  \u2022 Data: CoinGecko API, Twitter/X API v2\n\n" +
-      "\u{1F9E0} *Research Agent* (DeepSeek LLM)\n" +
+      "\u{1F9E0} <b>Research Agent</b> (DeepSeek LLM)\n" +
       "  \u2022 Deep-researches top 15 signals for conviction scoring\n" +
       "  \u2022 Generates trading thesis, flags risks, scores fundamentals\n" +
       "  \u2022 Blends LLM conviction into final signal confidence\n" +
       "  \u2022 Data: DeepSeek v4 Flash API\n\n" +
-      "\u{1F6E1} *Risk Manager*\n" +
+      "\u{1F6E1} <b>Risk Manager</b>\n" +
       "  \u2022 Kelly Criterion position sizing (quarter-Kelly)\n" +
       "  \u2022 Portfolio heat limit, drawdown protection, leverage limits\n" +
       "  \u2022 Correlation check, red flag screening (no rug deployers)\n\n" +
-      "\u2699 *Execution*\n" +
+      "\u2699 <b>Execution</b>\n" +
       "  \u2022 Semi-auto: one-click approve/reject via Telegram\n" +
       "  \u2022 Stop-loss monitoring every 30 seconds\n" +
       "  \u2022 Supports Binance, Bybit, MEXC (needs exchange API keys)\n\n" +
       "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n" +
-      "\u{1F4CB} *Commands*\n" +
+      "\u{1F4CB} <b>Commands</b>\n" +
       "/start — Main menu with inline buttons\n" +
       "/signals — Active signals (last 15)\n" +
       "/listings — New CEX listings past 24h\n" +
@@ -186,7 +186,7 @@ export class TelegramAlertBot {
       "(multi-agent confluence) or single agent confidence >= 50._";
 
     await this.bot.sendMessage(msg.chat.id, text, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: this.mainMenuKeyboard(),
     });
   }
@@ -209,11 +209,11 @@ export class TelegramAlertBot {
       const lines = signals.map((s, i) => {
         const scores = safeJson<string[]>(s.sources, []);
         const confluence = scores.length >= 2 ? ` \u{1F91D}${scores.length} agents` : "";
-        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} *${escapeMd(s.symbol)}* ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${escapeMd(s.catalyst || "")}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
+        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} <b>${escapeMd(s.symbol)}</b> ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${escapeMd(s.catalyst || "")}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
       });
 
       await this.bot.sendMessage(msg.chat.id,
-        `\u{1F4CA} *Active Signals* (${signals.length})\n\n${lines.join("\n\n")}`,
+        `\u{1F4CA} <b>Active Signals</b> (${signals.length})\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(msg.chat.id, `Error: ${err.message}`);
@@ -237,11 +237,11 @@ export class TelegramAlertBot {
       }
 
       const lines = listings.map(s =>
-        `\u{1F4E1} *${s.symbol}* — ${s.catalyst || "New listing"}\n   Score: ${s.score}/100 | ${s.chain}`
+        `\u{1F4E1} <b>${s.symbol}</b> — ${s.catalyst || "New listing"}\n   Score: ${s.score}/100 | ${s.chain}`
       );
 
       await this.bot.sendMessage(msg.chat.id,
-        `\u{1F4E1} *New Listings (24h)*\n\n${lines.join("\n\n")}`,
+        `\u{1F4E1} <b>New Listings (24h)</b>\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(msg.chat.id, `Error: ${err.message}`);
@@ -272,11 +272,11 @@ export class TelegramAlertBot {
       const top = result.signals.slice(0, 10);
       const lines = top.map((s, i) => {
         const sigs = escapeMd((s.catalyst || "").split("|").slice(0, 3).join(" | "));
-        return `${i + 1}. *${escapeMd(s.symbol)}* ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
+        return `${i + 1}. <b>${escapeMd(s.symbol)}</b> ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
       });
 
       await this.bot.sendMessage(chatId,
-        `\u{1F4CA} *Breakout Scan Results* (${result.signals.length} candidates, top ${Math.min(top.length, 10)} shown)\n\n${lines.join("\n\n")}`,
+        `\u{1F4CA} <b>Breakout Scan Results</b> (${result.signals.length} candidates, top ${Math.min(top.length, 10)} shown)\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Scan failed: ${err.message}`);
@@ -303,7 +303,7 @@ export class TelegramAlertBot {
 
       if (events.length === 0) {
         await this.bot.sendMessage(chatId,
-          `\u{1F40B} No recent whale activity for *${symbol}*.\n\nConfigure Etherscan/BscScan API keys for full on-chain tracking.`,
+          `\u{1F40B} No recent whale activity for <b>${symbol}</b>.\n\nConfigure Etherscan/BscScan API keys for full on-chain tracking.`,
           { parse_mode: "Markdown" });
         return;
       }
@@ -313,7 +313,7 @@ export class TelegramAlertBot {
       );
 
       await this.bot.sendMessage(chatId,
-        `\u{1F40B} *Whale Activity — ${symbol}*\n\n${lines.join("\n\n")}`,
+        `\u{1F40B} <b>Whale Activity — ${symbol}</b>\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", disable_web_page_preview: true });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
@@ -340,7 +340,7 @@ export class TelegramAlertBot {
       const pnlPct = positions.length > 0 ? (totalPnl / totalCapital) * 100 : 0;
 
       const line =
-        `\u{1F4B0} *Portfolio P&L*\n\n` +
+        `\u{1F4B0} <b>Portfolio P&L</b>\n\n` +
         `Total P&L: ${totalPnl >= 0 ? "+" : ""}${formatUSD(totalPnl)} (${formatPercent(pnlPct)})\n` +
         `Allocated: ${formatUSD(allocated)} (${((allocated / totalCapital) * 100).toFixed(0)}%)\n` +
         `Open Positions: ${positions.length}\n\n` +
@@ -372,7 +372,7 @@ export class TelegramAlertBot {
       ]);
 
       const text =
-        `\u{1F4CA} *System Status*\n\n` +
+        `\u{1F4CA} <b>System Status</b>\n\n` +
         `Uptime: ${hours}h ${minutes}m ${seconds}s\n` +
         `Database: Connected\n` +
         `Signals generated: ${signalCount}\n` +
@@ -386,7 +386,7 @@ export class TelegramAlertBot {
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId,
-        `\u{1F4CA} *System Status*\n\nUptime: ${hours}h ${minutes}m ${seconds}s\nDatabase: Connected\nDeepSeek: ${config.DEEPSEEK_API_KEY ? "Enabled" : "Disabled"}\nMode: Semi-Auto`,
+        `\u{1F4CA} <b>System Status</b>\n\nUptime: ${hours}h ${minutes}m ${seconds}s\nDatabase: Connected\nDeepSeek: ${config.DEEPSEEK_API_KEY ? "Enabled" : "Disabled"}\nMode: Semi-Auto`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     }
   }
@@ -408,14 +408,14 @@ export class TelegramAlertBot {
       }
 
       const lines = positions.map(p =>
-        `${p.direction === "long" ? "\u{1F7E2}" : "\u{1F534}"} *${p.symbol}* ${p.leverage}x\n` +
+        `${p.direction === "long" ? "\u{1F7E2}" : "\u{1F534}"} <b>${p.symbol}</b> ${p.leverage}x\n` +
         `Entry: $${formatPrice(p.entryPrice)} | Current: $${formatPrice(p.currentPrice || 0)}\n` +
         `Size: ${formatUSD(p.size)} | PnL: ${formatPercent(p.pnlPct || 0)}\n` +
         `SL: $${formatPrice(p.stopLoss)}${p.tp1 ? " | TP1: $" + formatPrice(p.tp1) : ""}`
       );
 
       await this.bot.sendMessage(chatId,
-        `\u{1F4CA} *Open Positions* (${positions.length})\n\n${lines.join("\n\n")}`,
+        `\u{1F4CA} <b>Open Positions</b> (${positions.length})\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
@@ -451,11 +451,11 @@ export class TelegramAlertBot {
 
       const lines = coins.map((c: any, i: number) => {
         const item = c.item;
-        return `${i + 1}. *${item.symbol?.toUpperCase()}* — ${item.name}\n   Rank: #${item.market_cap_rank || "?"} | Score: ${item.score || 0}`;
+        return `${i + 1}. <b>${item.symbol?.toUpperCase()}</b> — ${item.name}\n   Rank: #${item.market_cap_rank || "?"} | Score: ${item.score || 0}`;
       });
 
       await this.bot.sendMessage(chatId,
-        `\u{1F525} *Trending on CoinGecko*\n\n${lines.join("\n\n")}`,
+        `\u{1F525} <b>Trending on CoinGecko</b>\n\n${lines.join("\n\n")}`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
@@ -478,11 +478,11 @@ export class TelegramAlertBot {
       }
 
       const lines = fundingSignals.slice(0, 10).map(s =>
-        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} *${escapeMd(s.symbol)}*\n${escapeMd(s.catalyst || "")}`
+        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} <b>${escapeMd(s.symbol)}</b>\n${escapeMd(s.catalyst || "")}`
       );
 
       await this.bot.sendMessage(chatId,
-        `\u{1F4B8} *Extreme Funding Rates*\n\n${lines.join("\n\n")}\n\n_High positive funding = crowded longs (short opportunity)\nHigh negative funding = crowded shorts (long opportunity)_`,
+        `\u{1F4B8} <b>Extreme Funding Rates</b>\n\n${lines.join("\n\n")}\n\n_High positive funding = crowded longs (short opportunity)\nHigh negative funding = crowded shorts (long opportunity)_`,
         { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
@@ -536,14 +536,14 @@ export class TelegramAlertBot {
       const order = executionAgent.createOrder(signal, positionSize, signal.leverage);
       if (order) {
         await this.bot.sendMessage(chatId,
-          `\u2699 *Execution Order Created*\n\n` +
+          `\u2699 <b>Execution Order Created</b>\n\n` +
           `${direction.toUpperCase()} ${symbol} | ${order.leverage}x\n` +
           `Size: ${formatUSD(order.size)}\n` +
           `Entry: ${formatPrice(order.entryPrice)}\n` +
           `SL: ${formatPrice(order.stopLoss)}\n\n` +
           `Click to confirm:`,
           {
-            parse_mode: "Markdown",
+            parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
                 { text: "✅ Approve", callback_data: `approve_${order.approvalKey}` },
@@ -630,7 +630,7 @@ export class TelegramAlertBot {
 
   async sendExecutionConfirmation(order: any): Promise<void> {
     await this.bot.sendMessage(this.chatId,
-      `\u26A1 *Order Pending — ${order.direction.toUpperCase()}*\n\n` +
+      `\u26A1 <b>Order Pending — ${order.direction.toUpperCase()}</b>\n\n` +
       `${order.symbol} on ${order.exchange.toUpperCase()}\n` +
       `Size: ${formatUSD(order.size)} | ${order.leverage}x\n` +
       `Entry: ${formatPrice(order.entryPrice)}\n` +
@@ -638,7 +638,7 @@ export class TelegramAlertBot {
       `Key: \`${order.approvalKey}\`\n\n` +
       `Approve with /exec ${order.approvalKey}`,
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [[
             { text: "\u2705 Approve", callback_data: `approve_${order.approvalKey}` },
@@ -657,7 +657,7 @@ export class TelegramAlertBot {
     // Silently log, only alert on rejects for administrative channel
     if (!risk.approved && this.adminChatId) {
       await this.bot.sendMessage(this.adminChatId,
-        `\u274C *Rejected* — ${signal.symbol}\n${risk.reason}`,
+        `\u274C <b>Rejected</b> — ${signal.symbol}\n${risk.reason}`,
         { parse_mode: "Markdown" },
       );
     }
@@ -672,7 +672,7 @@ export class TelegramAlertBot {
     );
 
     await this.bot.sendMessage(this.chatId,
-      `\u{1F4CA} *Portfolio*\n\n` +
+      `\u{1F4CA} <b>Portfolio</b>\n\n` +
       `P&L: ${formatUSD(stats.totalPnl)} | Heat: ${((stats.heat || 0) * 100).toFixed(0)}%\n\n` +
       lines.join("\n"),
       { parse_mode: "Markdown" },
@@ -705,8 +705,8 @@ export class TelegramAlertBot {
   }
 
   async sendMainMenu(chatId: string): Promise<void> {
-    await this.bot.sendMessage(chatId, "\u{1F4CB} *Menu*\n\nSelect an option:", {
-      parse_mode: "Markdown",
+    await this.bot.sendMessage(chatId, "\u{1F4CB} <b>Menu</b>\n\nSelect an option:", {
+      parse_mode: "HTML",
       reply_markup: this.mainMenuKeyboard(),
     });
   }
