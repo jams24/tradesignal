@@ -82,9 +82,9 @@ export class SignalEngine extends EventEmitter {
             positionSize: signal.positionSize,
             catalyst: signal.catalyst,
             thesis: signal.thesis,
-            sources: JSON.stringify(signal.sources),
-            agentScores: JSON.stringify(signal.agentScores),
-            rawData: JSON.stringify(signal.rawData || {}),
+            sources: signal.sources as any,
+            agentScores: signal.agentScores as any,
+            rawData: (signal.rawData || {}) as any,
             status: "ACTIVE",
           },
         });

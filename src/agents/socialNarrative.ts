@@ -121,7 +121,7 @@ export class SocialNarrativeAgent {
               id: n.name.toLowerCase().replace(/\s+/g, "-"),
               name: n.name,
               weight: n.weight,
-              keywords: JSON.stringify(n.keywords),
+              keywords: n.keywords as any,
               mentions: n.mentions,
               sentiment: n.sentiment,
             },

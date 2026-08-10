@@ -6,6 +6,7 @@ import { prisma } from "../db/prisma";
 import { executionAgent } from "../agents/execution";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import type { TradeSignal } from "../types/signals";
+import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress } from "../utils/formatting";
 
 const SIGNAL_COOLDOWNS = new Map<string, number>();
@@ -154,7 +155,8 @@ export class TelegramAlertBot {
       }
 
       const lines = signals.map((s, i) => {
-        const scores = JSON.parse(s.sources as string || "[]") as string[];
+        const scores = safeJson<string[]>(s.sources, []);
+        const agentScores = safeJson<Record<string, number>>(s.agentScores, {});
         const confluence = scores.length >= 2 ? ` \u{1F91D}${scores.length} agents` : "";
         return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} *${s.symbol}* ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${s.catalyst || ""}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
       });
@@ -467,8 +469,8 @@ export class TelegramAlertBot {
         leverage: dbSignal.leverage,
         exchange: "binance",
         catalyst: dbSignal.catalyst || "",
-        sources: JSON.parse(dbSignal.sources as string || "[]"),
-        agentScores: JSON.parse(dbSignal.agentScores as string || "{}"),
+        sources: safeJson<string[]>(dbSignal.sources, []) as any,
+        agentScores: safeJson<Record<string, number>>(dbSignal.agentScores, {}),
         tp1: dbSignal.tp1 || undefined,
         tp2: dbSignal.tp2 || undefined,
         tp3: dbSignal.tp3 || undefined,
