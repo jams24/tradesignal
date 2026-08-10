@@ -50,7 +50,21 @@ const TOKEN_SYMBOLS: Record<string, string> = {
   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
   "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599": "WBTC",
   "0x6b175474e89094c44da98b954eedeac495271d0f": "DAI",
+  "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984": "UNI",
+  "0x514910771af9ca656af840dff83e8264ecf986ca": "LINK",
+  "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9": "AAVE",
+  "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce": "SHIB",
+  "0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2": "MKR",
+  "0x0d8775f648430679a709e98d2b0cb6250d2887ef": "BAT",
+  "0x111111111117dc0aa78b770fa6a738034120c302": "1INCH",
+  "0x4fabb145d64652a948d72533023f6e7a623c7c53": "BUSD",
+  "0x853d955acef822db058eb8505911ed77f175b99e": "FRAX",
 };
+
+function resolveSymbol(address: string): string {
+  const key = address.toLowerCase();
+  return TOKEN_SYMBOLS[key] || address.slice(0, 6) + "..." + address.slice(-4);
+}
 
 export class DexDataProvider {
   private rpcIndex: Record<string, number> = {};
@@ -129,7 +143,6 @@ export class DexDataProvider {
       const latest = await this.getLatestBlock(chain);
       if (latest === 0) return signals;
 
-      // Look at last ~1 hour of blocks (300 blocks on ETH)
       const fromBlock = "0x" + Math.max(latest - 300, 0).toString(16);
       const toBlock = "0x" + latest.toString(16);
 
@@ -142,61 +155,73 @@ export class DexDataProvider {
       const logs = response?.result || [];
       if (!Array.isArray(logs)) return signals;
 
-      // Aggregate volume by pair address
       const pairVolumes = new Map<string, {
-        pairAddress: string;
         swapCount: number;
         totalUsd: number;
         token0: string;
         token1: string;
+        sym0: string;
+        sym1: string;
       }>();
 
       for (const log of logs) {
-        const pairAddress = log.address;
-        const existing = pairVolumes.get(pairAddress) || {
-          pairAddress,
-          swapCount: 0,
-          totalUsd: 0,
-          token0: "",
-          token1: "",
-        };
+        if (pairVolumes.size > 100) break;
 
-        // Parse amounts from data (amount0In, amount1In, amount0Out, amount1Out)
         const data = log.data || "0x";
-        if (data.length < 130) continue; // skip malformed
+        if (data.length < 258) continue;
 
-        const amount0In = parseInt("0x" + data.slice(2, 66), 16) || 0;
-        const amount0Out = parseInt("0x" + data.slice(130, 194), 16) || 0;
-        const amount1In = parseInt("0x" + data.slice(66, 130), 16) || 0;
-        const amount1Out = parseInt("0x" + data.slice(194, 258), 16) || 0;
+        const amount0 = parseInt("0x" + data.slice(2, 66), 16) || 0;
+        const amount1 = parseInt("0x" + data.slice(66, 130), 16) || 0;
+        const token0 = "0x" + (log.topics?.[1] || "0").slice(26).toLowerCase();
+        const token1 = "0x" + (log.topics?.[2] || "0").slice(26).toLowerCase();
 
-        // Roughly estimate: if token0 is WETH/USDT, use that for USD value
-        const volume0 = amount0In + amount0Out;
-        const volume1 = amount1In + amount1Out;
+        const sym0 = TOKEN_SYMBOLS[token0];
+        const sym1 = TOKEN_SYMBOLS[token1];
 
-        // Estimate USD (rough — 18 decimal tokens are likely ETH, 6 decimal are stables)
-        const volumeUsd = volume0 > volume1 ? volume0 / 1e18 * 2500 : volume1 / 1e6;
+        // Only track pairs where at least one token has a known price
+        if (!sym0 && !sym1) continue;
+
+        // Estimate USD value
+        let volumeUsd = 0;
+        if (sym0 === "WETH" || sym0 === "ETH") {
+          volumeUsd = (amount0 / 1e18) * 2500;
+        } else if (sym0 === "USDT" || sym0 === "USDC" || sym0 === "DAI" || sym0 === "BUSD" || sym0 === "FRAX") {
+          volumeUsd = amount0 / 1e6;
+        } else if (sym1 === "WETH" || sym1 === "ETH") {
+          volumeUsd = (amount1 / 1e18) * 2500;
+        } else if (sym1 === "USDT" || sym1 === "USDC" || sym1 === "DAI" || sym1 === "BUSD" || sym1 === "FRAX") {
+          volumeUsd = amount1 / 1e6;
+        } else {
+          continue; // couldn't estimate
+        }
+
+        if (volumeUsd < 1000) continue;
+
+        const pairKey = token0 < token1 ? `${token0}_${token1}` : `${token1}_${token0}`;
+        const existing = pairVolumes.get(pairKey) || {
+          swapCount: 0, totalUsd: 0, token0, token1, sym0: sym0 || "", sym1: sym1 || "",
+        };
 
         existing.swapCount++;
         existing.totalUsd += volumeUsd;
-        existing.token0 = "0x" + (log.topics?.[1] || "0").slice(26);
-        existing.token1 = "0x" + (log.topics?.[2] || "0").slice(26);
-
-        pairVolumes.set(pairAddress, existing);
+        pairVolumes.set(pairKey, existing);
       }
 
-      // Filter to pairs with > $50k volume in the last hour
       for (const [, data] of pairVolumes) {
-        if (data.totalUsd < 50000) continue;
+        if (data.totalUsd < 10000) continue; // >$10k in 1hr
+
+        const primarySymbol = data.sym0 && data.sym0 !== "WETH" ? data.sym0 :
+                              data.sym1 && data.sym1 !== "WETH" ? data.sym1 :
+                              data.sym0 || resolveSymbol(data.token0);
 
         signals.push({
           chain,
           dex: "uniswap_v2",
-          pairAddress: data.pairAddress,
+          pairAddress: "",
           token0: data.token0,
           token1: data.token1,
-          token0Symbol: TOKEN_SYMBOLS[data.token0.toLowerCase()] || "TOKEN",
-          token1Symbol: TOKEN_SYMBOLS[data.token1.toLowerCase()] || "TOKEN",
+          token0Symbol: data.sym0 || resolveSymbol(data.token0),
+          token1Symbol: data.sym1 || resolveSymbol(data.token1),
           volumeUsd: data.totalUsd,
           swaps24h: data.swapCount,
           isNew: false,

@@ -566,10 +566,12 @@ export class TelegramAlertBot {
       const parts: string[] = [];
 
       if (spikes.length > 0) {
-        parts.push(`\u{1F4C8} <b>DEX Volume Spikes</b> (last ~1hr, >$50k)`);
+        parts.push(`\u{1F4C8} <b>DEX Volume Spikes</b> (last ~1hr, >$10k)`);
         for (const s of spikes.slice(0, 8)) {
-          const sym = s.token0Symbol !== "WETH" ? s.token0Symbol : s.token1Symbol;
-          parts.push(`  ${sym} — $${(s.volumeUsd/1000).toFixed(1)}k volume (${s.swaps24h} swaps)`);
+          const sym = s.token0Symbol !== "WETH" && s.token0Symbol.length < 10 ? s.token0Symbol
+                    : s.token1Symbol !== "WETH" && s.token1Symbol.length < 10 ? s.token1Symbol
+                    : s.token0Symbol;
+          parts.push(`  ${escapeHtml(sym)} — $${(s.volumeUsd/1000).toFixed(1)}k volume (${s.swaps24h} swaps)`);
         }
       }
 

@@ -145,9 +145,9 @@ export class OnchainIntelAgent {
             ? spike.token0Symbol
             : spike.token1Symbol !== "WETH" && spike.token1Symbol !== "USDT" && spike.token1Symbol !== "USDC"
               ? spike.token1Symbol
-              : "TOKEN";
+              : spike.token0Symbol;
 
-          if (tokenSymbol === "TOKEN") continue;
+          if (!tokenSymbol) continue;
 
           candidates.push({
             symbol: tokenSymbol,
