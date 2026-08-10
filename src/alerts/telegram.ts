@@ -92,6 +92,9 @@ export class TelegramAlertBot {
         } else if (data === "cmd_dex") {
           await this.handleDex(query.message!);
           await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "cmd_perf") {
+          await this.handlePerformance(query.message!);
+          await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
           await this.bot.answerCallbackQuery(query.id);
@@ -867,6 +870,9 @@ export class TelegramAlertBot {
         ],
         [
           { text: "\u{1F4CA} Status", callback_data: "cmd_status" },
+          { text: "\u{1F4C8} Perf", callback_data: "cmd_perf" },
+        ],
+        [
           { text: "\u{1F4CB} Help", callback_data: "cmd_help" },
         ],
       ],
