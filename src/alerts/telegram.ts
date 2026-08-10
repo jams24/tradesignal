@@ -95,6 +95,10 @@ export class TelegramAlertBot {
         } else if (data === "cmd_perf") {
           await this.handlePerformance(query.message!);
           await this.bot.answerCallbackQuery(query.id);
+        } else if (data && data.startsWith("perf_more_")) {
+          const offset = parseInt(data.replace("perf_more_", "")) || 0;
+          await this.sendPerformancePage(query.message!.chat.id.toString(), offset);
+          await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
           await this.bot.answerCallbackQuery(query.id);
@@ -618,6 +622,11 @@ export class TelegramAlertBot {
   private async handlePerformance(msg: TelegramBot.Message): Promise<void> {
     const chatId = msg.chat.id.toString();
     await this.bot.sendMessage(chatId, "\u{1F4CA} Calculating signal performance...");
+    await this.sendPerformancePage(chatId, 0);
+  }
+
+  private async sendPerformancePage(chatId: string, offset: number): Promise<void> {
+    const PAGE_SIZE = 10;
 
     try {
       await performanceTracker.refresh();
@@ -626,25 +635,28 @@ export class TelegramAlertBot {
 
       if (tracked.length === 0) {
         await this.bot.sendMessage(chatId,
-          "No priced signals tracked yet. Only signals with an entry price are shown. DEX-only signals and Solana addresses are filtered out.\n\nWait for funding rate or listing signals — those include prices.",
+          "No priced signals tracked yet. Only signals with an entry price are shown.",
           { reply_markup: this.mainMenuKeyboard() });
         return;
       }
 
-      const parts: string[] = [];
-      parts.push(`\u{1F4C8} <b>Signal Performance</b>`);
-      parts.push(`Total: ${summary.total} | \u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down | \u26AA ${summary.total - summary.profitable - summary.unprofitable} pending`);
-      parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}%`);
-      parts.push(`TP1 hit: ${summary.tp1Hit} | SL hit: ${summary.slHit}`);
-      parts.push("");
-
       const priced = tracked.filter(s => s.pnlPct !== null);
       const unpriced = tracked.filter(s => s.pnlPct === null);
+      const sorted = [...priced.sort((a, b) => (b.pnlPct || 0) - (a.pnlPct || 0)), ...unpriced];
 
-      for (const s of [...priced.slice(0, 8), ...unpriced.slice(0, 2)]) {
+      const page = sorted.slice(offset, offset + PAGE_SIZE);
+      const hasMore = offset + PAGE_SIZE < sorted.length;
+
+      const parts: string[] = [];
+      parts.push(`\u{1F4C8} <b>Signal Performance</b> (${offset + 1}-${Math.min(offset + PAGE_SIZE, sorted.length)} of ${sorted.length})`);
+      parts.push(`\u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down | \u26AA ${summary.total - summary.profitable - summary.unprofitable} n/a`);
+      parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}% | TP1: ${summary.tp1Hit} | SL: ${summary.slHit}`);
+      parts.push("");
+
+      for (const s of page) {
         const emoji = s.pnlPct === null ? "\u26AA" :
                        s.pnlPct > 0 ? "\u{1F7E2}" : "\u{1F534}";
-        const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "no price";
+        const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "n/a";
         const entryStr = s.alertPrice ? ` @ $${s.alertPrice.toFixed(6)}` : "";
         const curStr = s.currentPrice ? ` → $${s.currentPrice.toFixed(6)}` : "";
         const flags = [s.hitTp1 ? "\u2705TP1" : "", s.hitSl ? "\u{1F6D1}SL" : ""].filter(Boolean).join(" ");
@@ -652,18 +664,22 @@ export class TelegramAlertBot {
         parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr}${entryStr}${curStr} | ${s.age}${flags ? " " + flags : ""}`);
       }
 
-      if (tracked.length > 10) {
-        parts.push(`\n... and ${tracked.length - 10} more`);
+      const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+      if (hasMore) {
+        keyboard.push([{ text: `Show more (${sorted.length - offset - PAGE_SIZE} remaining) →`, callback_data: `perf_more_${offset + PAGE_SIZE}` }]);
       }
+      keyboard.push([{ text: "\u{1F4CB} Menu", callback_data: "menu" }]);
 
-      await this.bot.sendMessage(chatId, parts.join("\n"),
-        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
+      await this.bot.sendMessage(chatId, parts.join("\n"), {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: keyboard },
+      });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
   }
 
-  // ─────────────────── CALLBACK HANDLERS ───────────────────
+  // ─────────────────── EXECUTION CALLBACK ───────────────────
 
   private async handleExecCallback(query: TelegramBot.CallbackQuery): Promise<void> {
     const data = query.data || "";
@@ -692,7 +708,7 @@ export class TelegramAlertBot {
         score: dbSignal.score,
         price: dbSignal.price || undefined,
         leverage: dbSignal.leverage,
-        exchange: "binance",
+        exchange: (dbSignal.exchange || "binance") as any,
         catalyst: dbSignal.catalyst || "",
         sources: safeJson<string[]>(dbSignal.sources, []) as any,
         agentScores: safeJson<Record<string, number>>(dbSignal.agentScores, {}),

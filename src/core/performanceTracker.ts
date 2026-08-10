@@ -5,32 +5,52 @@ import type { Direction } from "../types/signals";
 async function fetchPricesFromBinance(symbols: string[]): Promise<Map<string, number>> {
   const priceMap = new Map<string, number>();
   try {
-    // Binance public API — no auth needed, instant response
     const axios = require("axios");
-    const { data } = await axios.get("https://api.binance.com/api/v3/ticker/price", { timeout: 5000 });
-    for (const item of data || []) {
+
+    // Binance spot
+    const { data: binanceData } = await axios.get("https://api.binance.com/api/v3/ticker/price", { timeout: 5000 });
+    for (const item of binanceData || []) {
       if (item.symbol.endsWith("USDT")) {
         const sym = item.symbol.replace("USDT", "");
-        if (symbols.includes(sym)) {
-          priceMap.set(sym, parseFloat(item.price));
-        }
+        if (symbols.includes(sym)) priceMap.set(sym, parseFloat(item.price));
       }
     }
   } catch { /* silent */ }
 
-  // Also try Gate for symbols not found on Binance
+  // Gate for symbols not on Binance
   const missing = symbols.filter(s => !priceMap.has(s));
   if (missing.length > 0) {
     try {
       const axios = require("axios");
-      for (const sym of missing.slice(0, 5)) {
-        try {
-          const { data } = await axios.get(
-            `https://api.gate.io/api2/1/ticker/${sym.toLowerCase()}_usdt`,
-            { timeout: 3000 },
-          );
-          if (data?.last) priceMap.set(sym, parseFloat(data.last));
-        } catch { /* next */ }
+      const { data: gateData } = await axios.get("https://api.gate.io/api2/1/tickers", { timeout: 5000 });
+      for (const item of gateData || []) {
+        if (item.currency_pair?.endsWith("_USDT")) {
+          const sym = item.currency_pair.replace("_USDT", "").toUpperCase();
+          if (missing.includes(sym) && item.last) {
+            priceMap.set(sym, parseFloat(item.last));
+          }
+        }
+      }
+    } catch { /* silent */ }
+  }
+
+  // Bybit for remaining
+  const stillMissing = symbols.filter(s => !priceMap.has(s));
+  if (stillMissing.length > 0) {
+    try {
+      const axios = require("axios");
+      const { data: bybitData } = await axios.get(
+        "https://api.bybit.com/v5/market/tickers?category=spot",
+        { timeout: 5000 },
+      );
+      const list = bybitData?.result?.list || [];
+      for (const item of list) {
+        if (item.symbol?.endsWith("USDT")) {
+          const sym = item.symbol.replace("USDT", "");
+          if (stillMissing.includes(sym) && item.lastPrice) {
+            priceMap.set(sym, parseFloat(item.lastPrice));
+          }
+        }
       }
     } catch { /* silent */ }
   }
@@ -65,18 +85,23 @@ export class PerformanceTracker {
       // Load all active signals, dedup by symbol (keep first alert only)
       const dbSignals = await prisma.signal.findMany({
         where: { status: "ACTIVE" },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ price: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
       });
 
-      // Deduplicate + filter: only tradeable symbols with alert price
+      // Deduplicate: first signal per symbol, prefer ones with price
       const seen = new Set<string>();
       const uniqueSignals = dbSignals.filter(s => {
         const key = s.symbol;
         if (seen.has(key)) return false;
+        // Skip this unpriced signal if we already have a priced one for same symbol
+        if (!s.price) {
+          // Check if a priced version exists later
+          const hasPriced = dbSignals.some(other => other.symbol === s.symbol && other.price && other.id !== s.id);
+          if (hasPriced) return false;
+        }
         seen.add(key);
-        // Filter out contract addresses (40+ char hex) and symbols without price
-        if (!s.price) return false;
-        if (s.symbol.length > 20) return false;
+        // Filter out contract addresses
+        if (s.symbol.length > 15) return false;
         if (s.symbol.includes("..")) return false;
         if (s.symbol === "TOKEN" || s.symbol === "NEW_TOKEN") return false;
         return true;
