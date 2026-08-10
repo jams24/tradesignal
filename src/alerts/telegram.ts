@@ -4,6 +4,7 @@ import { logger } from "../utils/logger";
 import { config } from "../utils/config";
 import { prisma } from "../db/prisma";
 import { executionAgent } from "../agents/execution";
+import { socialProvider } from "../data/providers/social";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
@@ -449,13 +450,29 @@ export class TelegramAlertBot {
         return;
       }
 
+      const symbols = coins.map((c: any) => c.item.symbol?.toUpperCase()).filter(Boolean);
+      let twitterMap: Map<string, number> = new Map();
+
+      try {
+        const twitterSignals = await socialProvider.searchTwitterCashtags(symbols);
+        for (const s of twitterSignals) {
+          const prev = twitterMap.get(s.symbol) || 0;
+          twitterMap.set(s.symbol, prev + 1);
+        }
+      } catch { /* Twitter optional */ }
+
       const lines = coins.map((c: any, i: number) => {
         const item = c.item;
-        return `${i + 1}. <b>${item.symbol?.toUpperCase()}</b> — ${item.name}\n   Rank: #${item.market_cap_rank || "?"} | Score: ${item.score || 0}`;
+        const sym = item.symbol?.toUpperCase() || "";
+        const tweets = twitterMap.get(sym) || 0;
+        const twitterLine = tweets > 0 ? ` | Twitter: ${tweets} mentions` : "";
+        return `${i + 1}. <b>${sym}</b> — ${item.name}\n   Rank: #${item.market_cap_rank || "?"} | Score: ${item.score || 0}${twitterLine}`;
       });
 
+      const twitterActive = twitterMap.size > 0 ? ` (Twitter: ${twitterMap.size} symbols with mentions)` : "";
+
       await this.bot.sendMessage(chatId,
-        `\u{1F525} <b>Trending on CoinGecko</b>\n\n${lines.join("\n\n")}`,
+        `\u{1F525} <b>Trending</b> — CoinGecko + Twitter${twitterActive}\n\n${lines.join("\n\n")}`,
         { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
