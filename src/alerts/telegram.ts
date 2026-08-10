@@ -566,7 +566,6 @@ export class TelegramAlertBot {
   async sendSignalAlert(signal: TradeSignal): Promise<string | null> {
     if (!this.chatId) return null;
 
-    // Cooldown: 30 min per symbol
     const lastSent = SIGNAL_COOLDOWNS.get(signal.symbol);
     if (lastSent && Date.now() - lastSent < 30 * 60 * 1000) return null;
     SIGNAL_COOLDOWNS.set(signal.symbol, Date.now());
@@ -574,32 +573,34 @@ export class TelegramAlertBot {
     const directionEmoji = signal.direction === "long" ? "\u{1F7E2} LONG" : "\u{1F534} SHORT";
     const typeEmoji = TYPE_EMOJI[signal.type] || "\u{1F4CC}";
     const confluence = signal.sources.length >= 2
-      ? `\n\u{1F91D} *Confluence*: ${signal.sources.join(" + ")} (${signal.sources.length} agents)`
+      ? `\n\u{1F91D} <b>Confluence</b>: ${signal.sources.join(" + ")} (${signal.sources.length} agents)`
       : "";
 
+    const h = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     const parts: string[] = [
-      `${typeEmoji} *${escapeMd(signal.type)}* — ${directionEmoji}`,
+      `${typeEmoji} <b>${h(signal.type)}</b> — ${directionEmoji}`,
       `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`,
-      `\u{1F48E} *${escapeMd(signal.symbol)}*${signal.chain !== "unknown" ? ` (${escapeMd(signal.chain)})` : ""}`,
+      `\u{1F48E} <b>${h(signal.symbol)}</b>${signal.chain !== "unknown" ? ` (${h(signal.chain)})` : ""}`,
     ];
 
-    if (signal.price) parts.push(`\u{1F4B0} *Price*: $${formatPrice(signal.price)}`);
-    parts.push(`\u{1F4C8} *Confidence*: ${signal.confidence}/100 | *Score*: ${signal.score}/100`);
-    parts.push(`\u{1F4CA} *Leverage*: ${signal.leverage}x`);
+    if (signal.price) parts.push(`\u{1F4B0} <b>Price</b>: $${formatPrice(signal.price)}`);
+    parts.push(`\u{1F4C8} <b>Confidence</b>: ${signal.confidence}/100 | <b>Score</b>: ${signal.score}/100`);
+    parts.push(`\u{1F4CA} <b>Leverage</b>: ${signal.leverage}x`);
 
     if (signal.entryLow && signal.entryHigh)
-      parts.push(`\u{1F3AF} *Entry*: ${formatPrice(signal.entryLow)} \u2014 ${formatPrice(signal.entryHigh)}`);
-    if (signal.tp1) parts.push(`\u2705 *TP1*: ${formatPrice(signal.tp1)} (${signal.tp1Pct}%)`);
-    if (signal.tp2) parts.push(`\u2705 *TP2*: ${formatPrice(signal.tp2)} (${signal.tp2Pct}%)`);
-    if (signal.tp3) parts.push(`\u2705 *TP3*: ${formatPrice(signal.tp3)} (${signal.tp3Pct}%)`);
-    if (signal.stopLoss) parts.push(`\u{1F6D1} *SL*: ${formatPrice(signal.stopLoss)} (${signal.slPct}%)`);
+      parts.push(`\u{1F3AF} <b>Entry</b>: ${formatPrice(signal.entryLow)} \u2014 ${formatPrice(signal.entryHigh)}`);
+    if (signal.tp1) parts.push(`\u2705 <b>TP1</b>: ${formatPrice(signal.tp1)} (${signal.tp1Pct}%)`);
+    if (signal.tp2) parts.push(`\u2705 <b>TP2</b>: ${formatPrice(signal.tp2)} (${signal.tp2Pct}%)`);
+    if (signal.tp3) parts.push(`\u2705 <b>TP3</b>: ${formatPrice(signal.tp3)} (${signal.tp3Pct}%)`);
+    if (signal.stopLoss) parts.push(`\u{1F6D1} <b>SL</b>: ${formatPrice(signal.stopLoss)} (${signal.slPct}%)`);
 
-    parts.push(`\u{1F4DD} *Catalyst*: ${escapeMd(signal.catalyst)}`);
+    parts.push(`\u{1F4DD} <b>Catalyst</b>: ${h(signal.catalyst)}`);
     parts.push(confluence);
-    if (signal.thesis) parts.push(`\u{1F9E0} *Thesis*: ${escapeMd(signal.thesis)}`);
-    if (signal.deployerRisk) parts.push(`\u26A0 *Deployer*: ${escapeMd(signal.deployerRisk)}`);
+    if (signal.thesis) parts.push(`\u{1F9E0} <b>Thesis</b>: ${h(signal.thesis.slice(0, 500))}`);
+    if (signal.deployerRisk) parts.push(`\u26A0 <b>Deployer</b>: ${h(signal.deployerRisk)}`);
     if (signal.redFlags?.length)
-      parts.push(`\u{1F6A9} *Red Flags*: ${signal.redFlags.map(f => escapeMd(f)).join(", ")}`);
+      parts.push(`\u{1F6A9} <b>Red Flags</b>: ${signal.redFlags.map(f => h(f)).join(", ")}`);
     parts.push(`\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`);
 
     const message = parts.join("\n");
@@ -615,7 +616,7 @@ export class TelegramAlertBot {
       }
 
       const sent = await this.bot.sendMessage(this.chatId, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         disable_web_page_preview: true,
         reply_markup: { inline_keyboard: keyboard },
       });
