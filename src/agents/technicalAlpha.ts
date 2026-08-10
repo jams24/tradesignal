@@ -260,12 +260,15 @@ export class TechnicalAlphaAgent {
           ? `Funding rate at ${(rate * 100).toFixed(3)}% indicates overcrowded longs. Mean reversion expected.`
           : `Negative funding at ${(rate * 100).toFixed(3)}% suggests crowded shorts. Potential short squeeze.`;
 
-        const slPct = 7;
+        const slPct = 5;
+        const tp1Pct = 5;
+        const tp2Pct = 10;
+        const tp3Pct = 18;
         const stopLoss = price > 0
           ? (direction === "long" ? price * (1 - slPct / 100) : price * (1 + slPct / 100))
           : 0;
         const tp1 = price > 0
-          ? (direction === "long" ? price * 1.10 : price * 0.90)
+          ? (direction === "long" ? price * (1 + tp1Pct / 100) : price * (1 - tp1Pct / 100))
           : 0;
 
         signals.push({
@@ -281,10 +284,10 @@ export class TechnicalAlphaAgent {
           entryLow: price ? parseFloat((price * 0.998).toPrecision(6)) : undefined,
           entryHigh: price ? parseFloat((price * 1.002).toPrecision(6)) : undefined,
           tp1: tp1 ? parseFloat(tp1.toPrecision(6)) : undefined,
-          tp2: price ? parseFloat((direction === "long" ? price * 1.20 : price * 0.80).toPrecision(6)) : undefined,
-          tp3: price ? parseFloat((direction === "long" ? price * 1.35 : price * 0.65).toPrecision(6)) : undefined,
+          tp2: price ? parseFloat((direction === "long" ? price * (1 + tp2Pct / 100) : price * (1 - tp2Pct / 100)).toPrecision(6)) : undefined,
+          tp3: price ? parseFloat((direction === "long" ? price * (1 + tp3Pct / 100) : price * (1 - tp3Pct / 100)).toPrecision(6)) : undefined,
           stopLoss: stopLoss ? parseFloat(stopLoss.toPrecision(6)) : undefined,
-          tp1Pct: "10", tp2Pct: "20", tp3Pct: "35", slPct: "7",
+          tp1Pct: tp1Pct.toString(), tp2Pct: tp2Pct.toString(), tp3Pct: tp3Pct.toString(), slPct: slPct.toString(),
           catalyst,
           thesis,
           sources: ["TECHNICAL"],
