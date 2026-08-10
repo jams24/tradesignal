@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Signal {
+  id          String   @id @default(uuid())
+  type        String   // MEME, SMART_MONEY, ONCHAIN, TECHNICAL, SOCIAL, RESEARCH
+  symbol      String
+  chain       String   @default("unknown")
+  direction   String   // long, short
+  confidence  Int      @default(0) // 0-100
+  score       Int      @default(0) // composite score 0-100
+
+  price       Float?
+  entryLow    Float?
+  entryHigh   Float?
+  tp1         Float?
+  tp2         Float?
+  tp3         Float?
+  stopLoss    Float?
+  tp1Pct      String?
+  tp2Pct      String?
+  tp3Pct      String?
+  slPct       String?
+
+  leverage    Int      @default(5)
+  positionSize Float?
+
+  catalyst    String?
+  thesis      String?
+  sources     Json     @default("[]") // which agents contributed
+  agentScores Json     @default("{}") // individual agent scores
+  rawData     Json     @default("{}")
+
+  status      String   @default("ACTIVE") // ACTIVE, EXECUTED, REJECTED, CLOSED, EXPIRED
+  executedAt  DateTime?
+  closedAt    DateTime?
+
+  positions   Position[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([symbol])
+  @@index([type])
+  @@index([status])
+  @@index([confidence])
+  @@index([createdAt])
+}
+
+model Wallet {
+  id          String   @id @default(uuid())
+  address     String   @unique
+  chain       String
+  label       String?  // KOL name, exchange tag, etc.
+  category    String   @default("unknown") // smart_money, insider, exchange, bot, deployer, kol
+  roi         Float?   // cumulative ROI percentage
+  winRate     Float?
+  tradeCount  Int      @default(0)
+  totalPnl    Float?
+  lastSeen    DateTime @default(now())
+  tags        Json     @default("[]")
+  trades      WalletTrade[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([chain])
+  @@index([category])
+  @@index([roi])
+}
+
+model WalletTrade {
+  id          String   @id @default(uuid())
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+  chain       String
+  tokenAddress String
+  tokenSymbol String?
+  direction   String   // buy, sell
+  amount      Float
+  price       Float?
+  valueUsd    Float?
+  txHash      String?
+  blockNumber  Int?
+  timestamp   DateTime @default(now())
+
+  @@index([walletId])
+  @@index([tokenAddress])
+  @@index([timestamp])
+}
+
+model OnchainEvent {
+  id          String   @id @default(uuid())
+  chain       String
+  eventType   String   // bridge_transfer, exchange_netflow, token_unlock, whale_move, lp_create, lp_remove
+  symbol      String?
+  tokenAddress String?
+  amount      Float?
+  valueUsd    Float?
+  fromAddress String?
+  toAddress   String?
+  txHash      String
+  blockNumber  Int?
+  metadata    Json     @default("{}")
+  timestamp   DateTime @default(now())
+
+  @@index([chain])
+  @@index([eventType])
+  @@index([tokenAddress])
+  @@index([timestamp])
+}
+
+model TechnicalSignal {
+  id          String   @id @default(uuid())
+  symbol      String
+  exchange    String
+  timeframe   String   // 1m, 5m, 15m, 1h, 4h, 1d
+  direction   String   // long, short, neutral
+  score       Int      @default(0)
+  indicators  Json     @default("{}")
+  price       Float
+  signals     Json     @default("[]")
+  timestamp   DateTime @default(now())
+
+  @@index([symbol])
+  @@index([exchange])
+  @@index([timestamp])
+}
+
+model SocialMention {
+  id          String   @id @default(uuid())
+  platform    String   // twitter, telegram, discord, reddit
+  symbol      String?
+  keyword     String
+  content     String
+  authorId    String?
+  authorName  String?
+  authorFollowers Int?
+  sentiment   Float?   // -1 to 1
+  engagement  Int      @default(0) // likes + retweets + replies
+  url         String?
+  isKOL       Boolean  @default(false)
+  timestamp   DateTime @default(now())
+
+  @@index([symbol])
+  @@index([keyword])
+  @@index([platform])
+  @@index([timestamp])
+}
+
+model Narrative {
+  id          String   @id @default(uuid())
+  name        String   // "AI Agents", "RWA", "Memecoins", etc.
+  weight      Float    @default(0) // 0-1 narrative dominance
+  keywords    Json     @default("[]")
+  mentions    Int      @default(0)
+  sentiment   Float?   // -1 to 1
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+
+  @@index([weight])
+  @@index([lastSeen])
+}
+
+model Position {
+  id          String   @id @default(uuid())
+  signalId    String?
+  signal      Signal?  @relation(fields: [signalId], references: [id])
+  symbol      String
+  exchange    String
+  chain       String   @default("cex")
+  direction   String   // long, short
+  entryPrice  Float
+  currentPrice Float?
+  size        Float    // position size in USD
+  leverage    Int      @default(5)
+  tp1         Float?
+  tp2         Float?
+  tp3         Float?
+  stopLoss    Float
+  pnl         Float?
+  pnlPct      Float?
+  status      String   @default("OPEN") // OPEN, CLOSED, STOPPED_OUT, LIQUIDATED
+  openedAt    DateTime @default(now())
+  closedAt    DateTime?
+
+  @@index([status])
+  @@index([symbol])
+  @@index([openedAt])
+}
+
+model DailyStats {
+  id          String   @id @default(uuid())
+  date        DateTime @unique
+  totalSignals Int     @default(0)
+  executedSignals Int   @default(0)
+  winningTrades   Int  @default(0)
+  totalPnl    Float?
+  totalPnlPct Float?
+  maxDrawdown Float?
+  sharpeRatio Float?
+  winRate     Float?
+  createdAt   DateTime @default(now())
+}
