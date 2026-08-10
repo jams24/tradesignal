@@ -14,6 +14,7 @@ interface ListingCandidate {
   source: "api" | "announcement";
   announcementTitle?: string;
   confidence: number;
+  price?: number;
 }
 
 export class ListingMonitorAgent {
@@ -80,6 +81,22 @@ export class ListingMonitorAgent {
                 confidence: marketType === "perp" ? 85 : 70,
               });
             }
+          }
+
+          // Fetch current prices for newly detected pairs
+          if (newThisRun > 0) {
+            const newSymbols = candidates
+              .filter(c => c.exchange === exchangeId && !c.price)
+              .map(c => `${c.symbol}/USDT${c.type === "perp" ? ":USDT" : ""}`);
+            try {
+              const tickers = await exchange.fetchTickers(newSymbols);
+              for (const c of candidates) {
+                if (c.exchange !== exchangeId || c.price) continue;
+                const pairSymbol = `${c.symbol}/USDT${c.type === "perp" ? ":USDT" : ""}`;
+                const ticker = (tickers as any)[pairSymbol];
+                if (ticker?.last) c.price = ticker.last;
+              }
+            } catch { /* price fetch is best-effort */ }
           }
 
           if (newThisRun > 0) {
@@ -185,6 +202,7 @@ export class ListingMonitorAgent {
   private buildListingSignal(c: ListingCandidate): TradeSignal {
     const type = c.type === "perp" ? "PERPETUAL" : "SPOT";
     const sourceLabel = c.source === "announcement" ? "official announcement" : "exchange API";
+    const price = c.price || 0;
 
     return {
       type: "LISTING",
@@ -195,8 +213,17 @@ export class ListingMonitorAgent {
       score: c.confidence - 5,
       leverage: c.type === "perp" ? 5 : 1,
       exchange: c.exchange,
-      catalyst: `\u{1F680} New ${type} listing on ${c.exchange.toUpperCase()} via ${sourceLabel}`,
+      price: price || undefined,
+      entryLow: price ? parseFloat((price * 0.95).toPrecision(6)) : undefined,
+      entryHigh: price ? parseFloat((price * 1.02).toPrecision(6)) : undefined,
+      tp1: price ? parseFloat((price * 1.20).toPrecision(6)) : undefined,
+      tp2: price ? parseFloat((price * 1.50).toPrecision(6)) : undefined,
+      tp3: price ? parseFloat((price * 2.00).toPrecision(6)) : undefined,
+      stopLoss: price ? parseFloat((price * 0.85).toPrecision(6)) : undefined,
+      tp1Pct: "20", tp2Pct: "50", tp3Pct: "100", slPct: "15",
+      catalyst: `\u{1F680} New ${type} listing${price ? ` at $${price.toPrecision(6)}` : ""} on ${c.exchange.toUpperCase()} via ${sourceLabel}`,
       thesis: `${c.symbol} just listed on ${c.exchange.toUpperCase()} as a ${type} market. ` +
+             `${price ? `First detected at $${price.toPrecision(6)}. ` : ""}` +
              `New CEX listings on ${c.exchange} typically see high volatility in the first 30 minutes. ` +
              `${c.type === "perp" ? "Can trade with leverage." : "Spot only — consider capital allocation timing."} ` +
              `${c.announcementTitle ? "Title: " + c.announcementTitle : ""}`.trim(),

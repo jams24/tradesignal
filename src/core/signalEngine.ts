@@ -82,6 +82,7 @@ export class SignalEngine extends EventEmitter {
             positionSize: signal.positionSize,
             catalyst: signal.catalyst,
             thesis: signal.thesis,
+            exchange: signal.exchange,
             sources: signal.sources as any,
             agentScores: signal.agentScores as any,
             rawData: (signal.rawData || {}) as any,

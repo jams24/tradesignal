@@ -237,7 +237,7 @@ export class TelegramAlertBot {
       }
 
       const lines = listings.map(s =>
-        `\u{1F4E1} <b>${s.symbol}</b> — ${s.catalyst || "New listing"}\n   Score: ${s.score}/100 | ${s.chain}`
+        `\u{1F4E1} <b>${escapeHtml(s.symbol)}</b>${s.price ? ` at $${formatPrice(s.price)}` : ""}\n   ${s.catalyst || "New listing"}${s.exchange ? ` — ${s.exchange.toUpperCase()}` : ""} | Score: ${s.score}/100`
       );
 
       await this.bot.sendMessage(msg.chat.id,

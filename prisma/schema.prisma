@@ -33,6 +33,7 @@ model Signal {
 
   catalyst    String?
   thesis      String?
+  exchange    String?
   sources     Json     @default("[]") // which agents contributed
   agentScores Json     @default("{}") // individual agent scores
   rawData     Json     @default("{}")
