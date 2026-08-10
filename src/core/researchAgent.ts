@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { logger } from "../utils/logger";
 import { config } from "../utils/config";
+import { safeJson } from "../utils/json";
 import type { TradeSignal, AgentResult } from "../types/signals";
 
 interface ResearchResult {
@@ -152,7 +153,7 @@ Important:
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       const jsonStr = jsonMatch ? jsonMatch[0] : text;
 
-      const result = JSON.parse(jsonStr);
+      const result = safeJson<Record<string, any>>(jsonStr, {});
 
       return {
         symbol: signal.symbol,

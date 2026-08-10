@@ -72,6 +72,12 @@ export class TelegramAlertBot {
         } else if (data === "cmd_status") {
           await this.handleStatus(query.message!);
           await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "cmd_trending") {
+          await this.handleTrending(query.message!);
+          await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "cmd_funding") {
+          await this.handleFunding(query.message!);
+          await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
           await this.bot.answerCallbackQuery(query.id);
@@ -119,19 +125,65 @@ export class TelegramAlertBot {
 
   private async handleHelp(msg: TelegramBot.Message): Promise<void> {
     const text =
-      "\u{1F4CB} *Command List*\n\n" +
-      "/start — Main menu\n" +
-      "/signals — Active + recent signals\n" +
-      "/listings — New exchange listings (24h)\n" +
-      "/scan — Run technical breakout scan\n" +
-      "/whales \\<symbol\\> — On-chain whale activity\n" +
-      "/pnl — Portfolio performance\n" +
-      "/positions — Open positions\n" +
-      "/trending — Trending coins (CoinGecko)\n" +
-      "/funding — Extreme funding rates\n" +
-      "/status — System health\n" +
-      "/exec \\<key\\> — Approve pending order\n" +
-      "/reject \\<key\\> — Reject pending order\n";
+      "\u{1F916} *TradeSignal — Multi-Agent Crypto Trading Bot*\n\n" +
+      "\u{1F9E0} *8 AI Agents* scan markets 24/7 across 6 exchanges + 5 blockchains:\n\n" +
+      "\u{1F4E1} *Listing Monitor* (every 60s)\n" +
+      "  \u2022 Detects new spot/perpetual listings on Binance, MEXC, Bybit, Bitget, OKX, Gate\n" +
+      "  \u2022 Scrapes Binance announcement feed for upcoming listings\n" +
+      "  \u2022 Data: CCXT API + Binance CMS API\n\n" +
+      "\u{1F438} *Meme Scout* (every 1 min)\n" +
+      "  \u2022 Detects new DEX pairs on Solana (Raydium/Orca) and Base (Uniswap)\n" +
+      "  \u2022 Scores deployer history, LP lock/burn, sniper activity, age\n" +
+      "  \u2022 Data: Helius RPC (Solana), Base/ETH RPC\n\n" +
+      "\u{1F40B} *Smart Money* (every 2 min)\n" +
+      "  \u2022 Tracks high-ROI wallets across chains\n" +
+      "  \u2022 Fires when 2+ profitable wallets buy same token\n" +
+      "  \u2022 Weighted by wallet ROI, win rate, trade count\n" +
+      "  \u2022 Data: PostgreSQL (wallet trade history)\n\n" +
+      "\u{26D3} *On-Chain Intel* (every 5 min)\n" +
+      "  \u2022 Monitors USDT/USDC flows to/from exchange wallets (eth_getLogs)\n" +
+      "  \u2022 Tracks stablecoin bridge flows (LayerZero, Wormhole, Stargate)\n" +
+      "  \u2022 Token unlock schedules via DefiLlama\n" +
+      "  \u2022 Data: Free public RPCs (Cloudflare ETH, Binance BSC, Base)\n\n" +
+      "\u{1F4CA} *Technical Alpha* (every 5 min)\n" +
+      "  \u2022 Scans 1200+ perpetual pairs across 6 exchanges\n" +
+      "  \u2022 Multi-timeframe: RSI, EMA20/50, Bollinger Bands, MACD, ATR\n" +
+      "  \u2022 Volume spike detection, funding rate extremes\n" +
+      "  \u2022 Generates entry/TP1-TP3/SL with ATR-based levels\n" +
+      "  \u2022 Data: CCXT (6 exchanges)\n\n" +
+      "\u{1F4F1} *Social Narrative* (every 10 min)\n" +
+      "  \u2022 Fetches CoinGecko trending (top 15)\n" +
+      "  \u2022 Searches Twitter/X for \\$cashtag mentions + engagement\n" +
+      "  \u2022 Detects KOL activity (known influencer accounts)\n" +
+      "  \u2022 Tracks market narratives: AI, Memes, RWA, DePIN, Gaming, L2, DeFi, Solana\n" +
+      "  \u2022 Data: CoinGecko API, Twitter/X API v2\n\n" +
+      "\u{1F9E0} *Research Agent* (DeepSeek LLM)\n" +
+      "  \u2022 Deep-researches top 15 signals for conviction scoring\n" +
+      "  \u2022 Generates trading thesis, flags risks, scores fundamentals\n" +
+      "  \u2022 Blends LLM conviction into final signal confidence\n" +
+      "  \u2022 Data: DeepSeek v4 Flash API\n\n" +
+      "\u{1F6E1} *Risk Manager*\n" +
+      "  \u2022 Kelly Criterion position sizing (quarter-Kelly)\n" +
+      "  \u2022 Portfolio heat limit, drawdown protection, leverage limits\n" +
+      "  \u2022 Correlation check, red flag screening (no rug deployers)\n\n" +
+      "\u2699 *Execution*\n" +
+      "  \u2022 Semi-auto: one-click approve/reject via Telegram\n" +
+      "  \u2022 Stop-loss monitoring every 30 seconds\n" +
+      "  \u2022 Supports Binance, Bybit, MEXC (needs exchange API keys)\n\n" +
+      "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n" +
+      "\u{1F4CB} *Commands*\n" +
+      "/start — Main menu with inline buttons\n" +
+      "/signals — Active signals (last 15)\n" +
+      "/listings — New CEX listings past 24h\n" +
+      "/scan — Manual breakout scan (6 exchanges)\n" +
+      "/whales \\<SYMBOL\\> — On-chain transfer activity\n" +
+      "/pnl — Portfolio P&L + allocations\n" +
+      "/positions — Open positions with entries\n" +
+      "/trending — Top 10 CoinGecko trending\n" +
+      "/funding — Extreme funding rate opportunities\n" +
+      "/status — System health + stats\n\n" +
+      "_Signal alerts auto-post when 2+ agents agree " +
+      "(multi-agent confluence) or single agent confidence >= 50._";
 
     await this.bot.sendMessage(msg.chat.id, text, {
       parse_mode: "Markdown",
@@ -641,10 +693,11 @@ export class TelegramAlertBot {
           { text: "\u{1F525} Trending", callback_data: "cmd_trending" },
         ],
         [
+          { text: "\u{1F4B8} Funding", callback_data: "cmd_funding" },
           { text: "\u{1F4B0} P&L", callback_data: "cmd_pnl" },
-          { text: "\u{1F4CA} Status", callback_data: "cmd_status" },
         ],
         [
+          { text: "\u{1F4CA} Status", callback_data: "cmd_status" },
           { text: "\u{1F4CB} Help", callback_data: "cmd_help" },
         ],
       ],

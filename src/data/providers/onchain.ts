@@ -38,119 +38,152 @@ export interface TokenUnlock {
   percentage: number;
 }
 
-const KNOWN_EXCHANGE_ADDRESSES: Record<string, string[]> = {
-  ethereum: [
-    "0x28c6c06298d514db089934071355e5743bf21d60", // Binance
-    "0x21a31ee1afc51d94c2efccaa2092ad1028285549", // Binance 2
-    "0xdfd5293d8e347dfe59e90efd55b2956a1343963d", // Binance 3
-    "0x5041ed759dd4afc3a72b8192c143f72f4724081a", // OKX
-    "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88", // MEXC
-    "0x0d0707963952f2fba59dd06f2b425ace40b492fe", // Gate
-    "0x1ab87cd2a58efc7aa98a6700f2a495a3c0b7af18", // Bybit
-    "0x8103683202aa8da10563084f12aae4f0d1be53a7", // Coinbase 1
-    "0x503828976d22510aad0201ac7ec88293211d23da", // Coinbase 2
-  ],
-  bsc: [
-    "0x631fc1ea2270e98fbd9d92658ece0f5a269aa161", // Binance BSC
-    "0x8894e0a0c962cb723c1976a4421c95949be2d4e3", // Binance BSC 2
-    "0xe2fc31f816a9b94326492132018c3aecc4a93ae1", // Binance BSC 3
-  ],
-  base: [
-    "0x3304e22ddaa22bcdc5f2265114e3ba6a5e59b68a", // Coinbase Base
-  ],
+const FREE_RPCS: Record<string, string> = {
+  ethereum: "https://cloudflare-eth.com",
+  bsc: "https://bsc-dataseed.binance.org",
+  base: "https://mainnet.base.org",
+  arbitrum: "https://arb1.arbitrum.io/rpc",
+  polygon: "https://polygon-rpc.com",
+};
+
+const USDT_ETH = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+const USDC_ETH = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+
+const KNOWN_EXCHANGES: Record<string, { name: string; chain: Chain }> = {
+  "0x28c6c06298d514db089934071355e5743bf21d60": { name: "binance", chain: "ethereum" },
+  "0x21a31ee1afc51d94c2efccaa2092ad1028285549": { name: "binance", chain: "ethereum" },
+  "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": { name: "binance", chain: "ethereum" },
+  "0x5041ed759dd4afc3a72b8192c143f72f4724081a": { name: "okx", chain: "ethereum" },
+  "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88": { name: "mexc", chain: "ethereum" },
+  "0x0d0707963952f2fba59dd06f2b425ace40b492fe": { name: "gate", chain: "ethereum" },
+  "0x1ab87cd2a58efc7aa98a6700f2a495a3c0b7af18": { name: "bybit", chain: "ethereum" },
+  "0x8103683202aa8da10563084f12aae4f0d1be53a7": { name: "coinbase", chain: "ethereum" },
+  "0x503828976d22510aad0201ac7ec88293211d23da": { name: "coinbase", chain: "ethereum" },
+  "0x3304e22ddaa22bcdc5f2265114e3ba6a5e59b68a": { name: "coinbase", chain: "base" },
 };
 
 export class OnchainDataProvider {
-  async fetchBridgeFlows(minValueUsd = 50000): Promise<BridgeFlow[]> {
-    const flows: BridgeFlow[] = [];
+  private rpcCall(chain: Chain, method: string, params: any[]): Promise<any> {
+    const rpcUrl = FREE_RPCS[chain];
+    if (!rpcUrl) return Promise.resolve(null);
 
-    // Monitor major bridges via their contract events
-    const bridges = [
-      {
-        chain: "ethereum" as Chain,
-        address: "0x49048044D57e1C5A4fAAf8453e1F55B37A8e0B16", // LayerZero ETH
-        name: "LayerZero",
-      },
-      {
-        chain: "ethereum" as Chain,
-        address: "0x3a23F943181408EAC424116Af7b7790c94Cb97a5", // Wormhole ETH
-        name: "Wormhole",
-      },
-    ];
+    return axios.post(rpcUrl, {
+      jsonrpc: "2.0", id: 1, method, params,
+    }, { timeout: 10000 }).then(r => r.data).catch(() => null);
+  }
 
-    for (const bridge of bridges) {
-      try {
-        const { data } = await axios.get(
-          `https://api.etherscan.io/api?module=account&action=txlist&address=${bridge.address}&page=1&offset=20&sort=desc&apikey=${config.ETHERSCAN_API_KEY}`,
-          { timeout: 10000 },
-        );
+  async fetchExchangeNetflows(chain: Chain = "ethereum"): Promise<ExchangeNetflow[]> {
+    const flows: ExchangeNetflow[] = [];
+    const rpcUrl = FREE_RPCS[chain];
+    if (!rpcUrl) return flows;
 
-        if (data?.result) {
-          for (const tx of data.result) {
-            const valueEth = parseFloat(tx.value) / 1e18;
-            flows.push({
-              chain: bridge.chain,
-              bridgeName: bridge.name,
-              token: "ETH",
-              symbol: "ETH",
-              amount: valueEth,
-              valueUsd: valueEth * 2500, // placeholder, use price feed
-              direction: tx.from === bridge.address.toLowerCase() ? "out" : "in",
-              txHash: tx.hash,
-              timestamp: parseInt(tx.timeStamp) * 1000,
-            });
-          }
+    const exchangeAddresses = Object.entries(KNOWN_EXCHANGES)
+      .filter(([, v]) => v.chain === chain)
+      .map(([addr]) => addr.toLowerCase())
+      .slice(0, 5);
+
+    try {
+      const latestBlock = await this.rpcCall(chain, "eth_blockNumber", []);
+      if (!latestBlock?.result) return flows;
+
+      const fromBlock = "0x" + (parseInt(latestBlock.result, 16) - 50).toString(16);
+
+      const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+      const response = await this.rpcCall(chain, "eth_getLogs", [{
+        fromBlock,
+        toBlock: latestBlock.result,
+        address: [USDT_ETH, USDC_ETH, USDC_ETH],
+        topics: [transferTopic],
+      }]);
+
+      const logs = response?.result || [];
+      for (const log of logs.slice(0, 30)) {
+        const from = "0x" + (log.topics?.[1] || "").slice(26).toLowerCase();
+        const to = "0x" + (log.topics?.[2] || "").slice(26).toLowerCase();
+        const value = parseInt(log.data || "0x0", 16);
+
+        const fromExchange = KNOWN_EXCHANGES[from];
+        const toExchange = KNOWN_EXCHANGES[to];
+
+        if (fromExchange || toExchange) {
+          const tokenSymbol = log.address.toLowerCase() === USDT_ETH.toLowerCase() ? "USDT" : "USDC";
+          const decimals = 6;
+          const amount = value / Math.pow(10, decimals);
+          const valueUsd = amount;
+
+          flows.push({
+            chain,
+            exchange: (fromExchange || toExchange)!.name,
+            token: log.address,
+            symbol: tokenSymbol,
+            amount,
+            valueUsd,
+            direction: toExchange ? "inflow" : "outflow",
+            timestamp: Date.now(),
+          });
         }
-      } catch (err: any) {
-        logger.error(`Bridge flow fetch failed for ${bridge.name}: ${err.message}`);
       }
+    } catch (err: any) {
+      logger.error(`Exchange netflow fetch failed for ${chain}: ${err.message}`);
     }
 
     return flows;
   }
 
-  async fetchExchangeNetflows(chain: Chain = "ethereum"): Promise<ExchangeNetflow[]> {
-    const flows: ExchangeNetflow[] = [];
-    const addresses = KNOWN_EXCHANGE_ADDRESSES[chain] || [];
-    const apiKey = chain === "ethereum" ? config.ETHERSCAN_API_KEY : config.BSCSCAN_API_KEY;
-    const baseUrl = chain === "ethereum" ? "https://api.etherscan.io/api" : "https://api.bscscan.com/api";
+  async fetchBridgeFlows(minValueUsd = 50000): Promise<BridgeFlow[]> {
+    const flows: BridgeFlow[] = [];
 
-    if (!apiKey) return flows;
+    // Monitor USDC Transfer events to/from known bridge contracts
+    const bridges = [
+      { name: "LayerZero ETH", address: "0x49048044D57e1C5A4fAAf8453e1F55B37A8e0B16", chain: "ethereum" as Chain },
+      { name: "Wormhole ETH", address: "0x3a23F943181408EAC424116Af7b7790c94Cb97a5", chain: "ethereum" as Chain },
+      { name: "Stargate ETH", address: "0x8731d54E9D02c286767d56ac03e8037C07e01e98", chain: "ethereum" as Chain },
+    ];
 
-    for (const address of addresses.slice(0, 5)) {
+    for (const bridge of bridges) {
+      const rpcUrl = FREE_RPCS[bridge.chain];
+      if (!rpcUrl) continue;
+
       try {
-        const { data } = await axios.get(baseUrl, {
-          params: {
-            module: "account",
-            action: "txlist",
-            address,
-            page: 1,
-            offset: 10,
-            sort: "desc",
-            apikey: apiKey,
-          },
-          timeout: 10000,
-        });
+        const latestBlock = await this.rpcCall(bridge.chain, "eth_blockNumber", []);
+        if (!latestBlock?.result) continue;
 
-        if (data?.result) {
-          for (const tx of data.result) {
-            const value = parseFloat(tx.value) / 1e18;
-            const isInflow = tx.to?.toLowerCase() === address.toLowerCase();
+        const fromBlock = "0x" + (parseInt(latestBlock.result, 16) - 100).toString(16);
 
+        const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+        const response = await this.rpcCall(bridge.chain, "eth_getLogs", [{
+          fromBlock,
+          toBlock: latestBlock.result,
+          address: [USDC_ETH, USDT_ETH],
+          topics: [transferTopic, null, "0x" + bridge.address.slice(2).toLowerCase().padStart(64, "0")],
+        }]);
+
+        const logs = response?.result || [];
+        for (const log of logs.slice(0, 10)) {
+          const from = "0x" + (log.topics?.[1] || "").slice(26);
+          const value = parseInt(log.data || "0x0", 16);
+          const amount = value / 1e6;
+          const isIncoming = from.toLowerCase() === bridge.address.toLowerCase();
+
+          if (amount > 10000) {
             flows.push({
-              chain,
-              exchange: this.identifyExchange(address),
-              token: "ETH",
-              symbol: "ETH",
-              amount: value,
-              valueUsd: value * 2500,
-              direction: isInflow ? "inflow" : "outflow",
-              timestamp: parseInt(tx.timeStamp) * 1000,
+              chain: bridge.chain,
+              bridgeName: bridge.name,
+              token: log.address,
+              symbol: log.address.toLowerCase() === USDC_ETH.toLowerCase() ? "USDC" : "USDT",
+              amount,
+              valueUsd: amount,
+              direction: isIncoming ? "in" : "out",
+              txHash: log.transactionHash || "",
+              timestamp: Date.now(),
             });
           }
         }
       } catch (err: any) {
-        logger.error(`Netflow fetch failed for ${address}: ${err.message}`);
+        logger.error(`Bridge flow fetch failed for ${bridge.name}: ${err.message}`);
       }
     }
 
@@ -180,8 +213,6 @@ export class OnchainDataProvider {
   }
 
   async getStablecoinNetflow(): Promise<{ chain: Chain; inflow: number; outflow: number; net: number }[]> {
-    // Fetch stablecoin (USDT/USDC) flows into exchanges as a macro indicator
-    // Positive net = stablecoins entering exchanges = buying power
     return [
       { chain: "ethereum", inflow: 0, outflow: 0, net: 0 },
       { chain: "bsc", inflow: 0, outflow: 0, net: 0 },
@@ -189,19 +220,13 @@ export class OnchainDataProvider {
     ];
   }
 
-  private identifyExchange(address: string): string {
-    const map: Record<string, string> = {
-      "0x28c6c06298d514db089934071355e5743bf21d60": "binance",
-      "0x21a31ee1afc51d94c2efccaa2092ad1028285549": "binance",
-      "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": "binance",
-      "0x5041ed759dd4afc3a72b8192c143f72f4724081a": "okx",
-      "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88": "mexc",
-      "0x0d0707963952f2fba59dd06f2b425ace40b492fe": "gate",
-      "0x1ab87cd2a58efc7aa98a6700f2a495a3c0b7af18": "bybit",
-      "0x8103683202aa8da10563084f12aae4f0d1be53a7": "coinbase",
-      "0x503828976d22510aad0201ac7ec88293211d23da": "coinbase",
-    };
-    return map[address.toLowerCase()] || "unknown";
+  async getLatestBlock(chain: Chain): Promise<number> {
+    try {
+      const result = await this.rpcCall(chain, "eth_blockNumber", []);
+      return parseInt(result?.result || "0x0", 16);
+    } catch {
+      return 0;
+    }
   }
 }
 
