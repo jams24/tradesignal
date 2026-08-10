@@ -115,7 +115,7 @@ export class TelegramAlertBot {
       "\u{1F438} Meme Scout | \u{1F40B} Smart Money | \u{26D3} On-Chain Intel\n" +
       "\u{1F4CA} Technical Alpha | \u{1F4F1} Social Narrative | \u{1F9E0} Research\n" +
       "\u{1F6E1} Risk Manager | \u2699 Execution\n\n" +
-      "_High-confidence signals auto-posted. Use commands below._";
+      "High-confidence signals auto-posted. Use commands below.";
 
     await this.bot.sendMessage(msg.chat.id, text, {
       parse_mode: "HTML",
@@ -153,7 +153,7 @@ export class TelegramAlertBot {
       "  \u2022 Data: CCXT (6 exchanges)\n\n" +
       "\u{1F4F1} <b>Social Narrative</b> (every 10 min)\n" +
       "  \u2022 Fetches CoinGecko trending (top 15)\n" +
-      "  \u2022 Searches Twitter/X for \\$cashtag mentions + engagement\n" +
+      "  \u2022 Searches Twitter/X for $cashtag mentions + engagement\n" +
       "  \u2022 Detects KOL activity (known influencer accounts)\n" +
       "  \u2022 Tracks market narratives: AI, Memes, RWA, DePIN, Gaming, L2, DeFi, Solana\n" +
       "  \u2022 Data: CoinGecko API, Twitter/X API v2\n\n" +
@@ -176,14 +176,14 @@ export class TelegramAlertBot {
       "/signals — Active signals (last 15)\n" +
       "/listings — New CEX listings past 24h\n" +
       "/scan — Manual breakout scan (6 exchanges)\n" +
-      "/whales \\<SYMBOL\\> — On-chain transfer activity\n" +
+      "/whales SYMBOL — On-chain transfer activity\n" +
       "/pnl — Portfolio P&L + allocations\n" +
       "/positions — Open positions with entries\n" +
       "/trending — Top 10 CoinGecko trending\n" +
       "/funding — Extreme funding rate opportunities\n" +
       "/status — System health + stats\n\n" +
-      "_Signal alerts auto-post when 2+ agents agree " +
-      "(multi-agent confluence) or single agent confidence >= 50._";
+      "Signal alerts auto-post when 2+ agents agree " +
+      "(multi-agent confluence) or single agent confidence &gt;= 50.";
 
     await this.bot.sendMessage(msg.chat.id, text, {
       parse_mode: "HTML",
@@ -214,7 +214,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(msg.chat.id,
         `\u{1F4CA} <b>Active Signals</b> (${signals.length})\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(msg.chat.id, `Error: ${err.message}`);
     }
@@ -242,7 +242,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(msg.chat.id,
         `\u{1F4E1} <b>New Listings (24h)</b>\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(msg.chat.id, `Error: ${err.message}`);
     }
@@ -277,7 +277,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(chatId,
         `\u{1F4CA} <b>Breakout Scan Results</b> (${result.signals.length} candidates, top ${Math.min(top.length, 10)} shown)\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Scan failed: ${err.message}`);
     }
@@ -290,7 +290,7 @@ export class TelegramAlertBot {
     if (!symbol) {
       await this.bot.sendMessage(chatId,
         "Usage: `/whales BTC`\n\nShows recent large on-chain transfers for the token.",
-        { parse_mode: "Markdown" });
+        { parse_mode: "HTML" });
       return;
     }
 
@@ -304,7 +304,7 @@ export class TelegramAlertBot {
       if (events.length === 0) {
         await this.bot.sendMessage(chatId,
           `\u{1F40B} No recent whale activity for <b>${symbol}</b>.\n\nConfigure Etherscan/BscScan API keys for full on-chain tracking.`,
-          { parse_mode: "Markdown" });
+          { parse_mode: "HTML" });
         return;
       }
 
@@ -314,7 +314,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(chatId,
         `\u{1F40B} <b>Whale Activity — ${symbol}</b>\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", disable_web_page_preview: true });
+        { parse_mode: "HTML", disable_web_page_preview: true });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
@@ -348,10 +348,10 @@ export class TelegramAlertBot {
           ? positions.map(p =>
             `${p.direction === "long" ? "\u{1F7E2}" : "\u{1F534}"} ${p.symbol} ${p.leverage}x | Entry: $${formatPrice(p.entryPrice)} | PnL: ${formatPercent(p.pnlPct || 0)}`
           ).join("\n")
-          : "_No open positions_");
+          : "No open positions");
 
       await this.bot.sendMessage(chatId, line,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
@@ -383,11 +383,11 @@ export class TelegramAlertBot {
         `Mode: Semi-Auto`;
 
       await this.bot.sendMessage(chatId, text,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId,
         `\u{1F4CA} <b>System Status</b>\n\nUptime: ${hours}h ${minutes}m ${seconds}s\nDatabase: Connected\nDeepSeek: ${config.DEEPSEEK_API_KEY ? "Enabled" : "Disabled"}\nMode: Semi-Auto`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     }
   }
 
@@ -402,8 +402,8 @@ export class TelegramAlertBot {
 
       if (positions.length === 0) {
         await this.bot.sendMessage(chatId,
-          "_No open positions._\n\nSignals with execution orders will appear here when approved.",
-          { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+          "No open positions.\n\nSignals with execution orders will appear here when approved.",
+          { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
         return;
       }
 
@@ -416,7 +416,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(chatId,
         `\u{1F4CA} <b>Open Positions</b> (${positions.length})\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
@@ -456,7 +456,7 @@ export class TelegramAlertBot {
 
       await this.bot.sendMessage(chatId,
         `\u{1F525} <b>Trending on CoinGecko</b>\n\n${lines.join("\n\n")}`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
@@ -482,8 +482,8 @@ export class TelegramAlertBot {
       );
 
       await this.bot.sendMessage(chatId,
-        `\u{1F4B8} <b>Extreme Funding Rates</b>\n\n${lines.join("\n\n")}\n\n_High positive funding = crowded longs (short opportunity)\nHigh negative funding = crowded shorts (long opportunity)_`,
-        { parse_mode: "Markdown", reply_markup: this.mainMenuKeyboard() });
+        `\u{1F4B8} <b>Extreme Funding Rates</b>\n\n${lines.join("\n\n")}\n\nHigh positive funding = crowded longs (short opportunity)\nHigh negative funding = crowded shorts (long opportunity)`,
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
@@ -658,7 +658,7 @@ export class TelegramAlertBot {
     if (!risk.approved && this.adminChatId) {
       await this.bot.sendMessage(this.adminChatId,
         `\u274C <b>Rejected</b> — ${signal.symbol}\n${risk.reason}`,
-        { parse_mode: "Markdown" },
+        { parse_mode: "HTML" },
       );
     }
   }
@@ -675,7 +675,7 @@ export class TelegramAlertBot {
       `\u{1F4CA} <b>Portfolio</b>\n\n` +
       `P&L: ${formatUSD(stats.totalPnl)} | Heat: ${((stats.heat || 0) * 100).toFixed(0)}%\n\n` +
       lines.join("\n"),
-      { parse_mode: "Markdown" },
+      { parse_mode: "HTML" },
     );
   }
 
