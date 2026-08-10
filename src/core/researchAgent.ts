@@ -48,10 +48,13 @@ export class ResearchAgent {
       };
     }
 
-    // Only deep-research top signals by score (to manage costs)
-    const topSignals = inputSignals
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 15);
+    // Deep-research top signals by score, but always include any on-chain signals
+    const onchainSignals = inputSignals.filter(s => s.type === "ONCHAIN");
+    const otherSignals = inputSignals
+      .filter(s => s.type !== "ONCHAIN")
+      .sort((a, b) => b.score - a.score);
+
+    const topSignals = [...onchainSignals, ...otherSignals].slice(0, 15);
 
     for (const signal of topSignals) {
       try {
@@ -104,6 +107,21 @@ export class ResearchAgent {
   private async analyzeToken(signal: TradeSignal): Promise<ResearchResult> {
     if (!this.client) throw new Error("DeepSeek client not initialized");
 
+    let onchainContext = "";
+    if (signal.type === "ONCHAIN") {
+      onchainContext = `
+ON-CHAIN SPECIFIC CONTEXT:
+- Exchange Netflow: ${signal.exchangeNetflow ? "$" + (signal.exchangeNetflow / 1e6).toFixed(2) + "M" : "unknown"}
+- This signal was detected from REAL blockchain data (eth_getLogs on Ethereum mainnet)
+- Inflows = coins moving INTO exchanges (typically bearish — people deposit to sell)
+- Outflows = coins moving OUT of exchanges (typically bullish — people withdraw to hold/use in DeFi)
+- USDT/USDC flows to exchanges = buying power entering the market (bullish for crypto broadly)
+- USDT/USDC flows from exchanges = stablecoins leaving (neutral to slightly bearish)
+- If multiple large inflows to the same exchange in a short time window, this could indicate a coordinated sell or a market maker preparing liquidity
+- If multiple large outflows from exchanges detected, this suggests whale accumulation
+`;
+    }
+
     const prompt = `You are an elite crypto trading analyst agent. Analyze this trading signal and provide your professional assessment.
 
 TRADING SIGNAL:
@@ -116,11 +134,12 @@ TRADING SIGNAL:
 - Catalyst: ${signal.catalyst}
 ${signal.price ? `- Price: $${signal.price}` : ""}
 ${signal.leverage ? `- Suggested Leverage: ${signal.leverage}x` : ""}
+${onchainContext}
 
 PROVIDE YOUR ANALYSIS IN THIS EXACT JSON FORMAT (no other text):
 {
   "convictionScore": <number 0-100, your confidence in this trade>,
-  "thesis": "<2-4 sentence trading thesis explaining WHY this might work>",
+  "thesis": "<2-4 sentence trading thesis explaining WHY this might work. For on-chain signals, explain the flow pattern and what it likely means for the market>",
   "redFlags": ["<concrete risk>", ...] (at least 1, max 5),
   "greenFlags": ["<bullish factor>", ...] (at least 1, max 5),
   "technicalScore": <number 0-100>,
@@ -131,11 +150,9 @@ PROVIDE YOUR ANALYSIS IN THIS EXACT JSON FORMAT (no other text):
 }
 
 Important:
-- Be HONEST. If this looks like a bad trade, give low scores.
-- Consider: tokenomics, liquidity depth, past listing patterns, market conditions
-- For memecoins: especially check deployer risk, LP status, sniper activity
-- For technical signals: check if RSI/volume patterns are reliable
-- For smart money: consider if wallets might be coordinated/insider
+- For ONCHAIN signals: analyze the flow direction, magnitude, and what it means. Large stablecoin outflows from exchanges = institutional accumulation, very bullish. Large inflows to exchanges = selling pressure, bearish.
+- Be HONEST. If this looks like a weak signal, give low scores.
+- Consider: what does this flow pattern tell us about market sentiment?
 - Red flags should be CONCRETE and ACTIONABLE`;
 
     try {

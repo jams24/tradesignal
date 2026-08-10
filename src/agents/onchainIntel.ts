@@ -129,6 +129,12 @@ export class OnchainIntelAgent {
   }
 
   private buildSignal(c: OnchainSignal): TradeSignal {
+    const flowDesc = c.signalType === "EXCHANGE_OUTFLOW"
+      ? `${c.symbol} WITHDRAWAL from ${c.details.split(": ")[1] || ""}`
+      : c.signalType === "EXCHANGE_INFLOW"
+        ? `${c.symbol} DEPOSIT to ${c.details.split(": ")[1] || ""}`
+        : c.details;
+
     return {
       type: "ONCHAIN",
       symbol: c.symbol,
@@ -137,14 +143,16 @@ export class OnchainIntelAgent {
       confidence: c.confidence,
       score: c.score,
       leverage: 2,
-      catalyst: c.details,
-      thesis: `On-chain detected ${c.details}. ` +
-        `${c.signalType === "EXCHANGE_OUTFLOW" ? "Large withdrawals from exchanges often indicate accumulation or cold storage — historically bullish." : ""}` +
-        `${c.signalType === "EXCHANGE_INFLOW" ? "Large deposits to exchanges often precede sell pressure — historically bearish." : ""}` +
-        `${c.signalType === "TOKEN_UNLOCK" ? "Upcoming token unlock may create sell pressure from early investors/team." : ""}`,
+      catalyst: flowDesc,
+      thesis: "",
       sources: ["ONCHAIN"],
       agentScores: { ONCHAIN_INTEL: c.score },
       exchangeNetflow: c.signalType.includes("EXCHANGE") ? c.valueUsd : undefined,
+      rawData: {
+        signalType: c.signalType,
+        valueUsd: c.valueUsd,
+        details: c.details,
+      },
     };
   }
 }
