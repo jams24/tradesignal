@@ -2,6 +2,30 @@ import axios from "axios";
 import { logger } from "../../utils/logger";
 import type { Chain } from "../../types/signals";
 
+export interface BridgeFlow {
+  chain: Chain;
+  bridgeName: string;
+  token: string;
+  symbol: string;
+  amount: number;
+  valueUsd: number;
+  direction: "in" | "out";
+  txHash: string;
+  timestamp: number;
+}
+
+export interface WhaleTransfer {
+  chain: Chain;
+  token: string;
+  symbol: string;
+  amount: number;
+  valueUsd: number;
+  from: string;
+  to: string;
+  txHash: string;
+  timestamp: number;
+}
+
 export interface ExchangeNetflow {
   chain: Chain;
   exchange: string;
@@ -82,6 +106,20 @@ const EXCHANGE_NAME_MAP: Record<string, string> = {};
 for (const [addr, name] of Object.entries(KNOWN_EXCHANGES)) {
   EXCHANGE_NAME_MAP[addr.toLowerCase()] = name;
 }
+
+// Known bridge contracts
+const BRIDGE_CONTRACTS: Record<string, { name: string; chain: Chain }> = {
+  // Stargate (LayerZero) — largest bridge
+  "0x8731d54e9d02c286767d56ac03e8037c07e01e98": { name: "stargate", chain: "ethereum" },
+  // Across Protocol bridge
+  "0x5c7bcd6e7de5423a257d81b442095a1a6ced35c5": { name: "across", chain: "ethereum" },
+  // Arbitrum bridge (gateway)
+  "0xa3a7b6f88361f48403514059f1f16c8e78d60eec": { name: "arbitrum_bridge", chain: "ethereum" },
+  // Optimism bridge
+  "0x99c9fc46f92e8a1c0dec1b1747d010903e884be1": { name: "optimism_bridge", chain: "ethereum" },
+  // Polygon bridge
+  "0xa0c68c638235ee32657e8f720a23cec1bfc77c77": { name: "polygon_bridge", chain: "ethereum" },
+};
 
 export class OnchainDataProvider {
   private rpcIndex: Record<string, number> = {};
@@ -180,6 +218,127 @@ export class OnchainDataProvider {
     }
 
     return flows;
+  }
+
+  async fetchBridgeFlows(chain: Chain = "ethereum"): Promise<BridgeFlow[]> {
+    const flows: BridgeFlow[] = [];
+    const bridgeAddrs = Object.keys(BRIDGE_CONTRACTS).filter(
+      a => BRIDGE_CONTRACTS[a].chain === chain
+    );
+
+    if (bridgeAddrs.length === 0) return flows;
+
+    try {
+      const latest = await this.getLatestBlock(chain);
+      if (latest === 0) return flows;
+
+      const fromBlock = "0x" + Math.max(latest - 200, 0).toString(16);
+      const toBlock = "0x" + latest.toString(16);
+
+      const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+      const response = await this.rpcCall(chain, "eth_getLogs", [{
+        fromBlock,
+        toBlock,
+        address: [USDT_ETH, USDC_ETH],
+        topics: [transferTopic],
+      }]);
+
+      const logs = response?.result || [];
+      if (!Array.isArray(logs)) return flows;
+
+      const bridgeSet = new Set(bridgeAddrs.map(a => a.toLowerCase()));
+
+      for (const log of logs) {
+        if (flows.length >= 15) break;
+        const from = "0x" + (log.topics?.[1] || "").slice(26).toLowerCase();
+        const to = "0x" + (log.topics?.[2] || "").slice(26).toLowerCase();
+
+        const isFromBridge = bridgeSet.has(from);
+        const isToBridge = bridgeSet.has(to);
+        if (!isFromBridge && !isToBridge) continue;
+
+        const value = parseInt(log.data || "0x0", 16);
+        const amount = value / 1e6;
+        if (amount < 50000) continue;
+
+        const bridgeAddr = isFromBridge ? from : to;
+        const bridge = BRIDGE_CONTRACTS[bridgeAddr];
+
+        flows.push({
+          chain,
+          bridgeName: bridge?.name || "unknown",
+          token: log.address,
+          symbol: log.address.toLowerCase() === USDC_ETH.toLowerCase() ? "USDC" : "USDT",
+          amount,
+          valueUsd: amount,
+          direction: isToBridge ? "out" : "in",
+          txHash: log.transactionHash || "",
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err: any) {
+      // Silently fail — bridge detection is best-effort
+    }
+
+    return flows;
+  }
+
+  async fetchWhaleTransfers(chain: Chain = "ethereum"): Promise<WhaleTransfer[]> {
+    const transfers: WhaleTransfer[] = [];
+
+    try {
+      const latest = await this.getLatestBlock(chain);
+      if (latest === 0) return transfers;
+
+      const fromBlock = "0x" + Math.max(latest - 100, 0).toString(16);
+      const toBlock = "0x" + latest.toString(16);
+
+      const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+      const response = await this.rpcCall(chain, "eth_getLogs", [{
+        fromBlock,
+        toBlock,
+        address: [USDT_ETH, USDC_ETH, WETH],
+        topics: [transferTopic],
+      }]);
+
+      const logs = response?.result || [];
+      if (!Array.isArray(logs)) return transfers;
+
+      for (const log of logs) {
+        if (transfers.length >= 10) break;
+
+        const value = parseInt(log.data || "0x0", 16);
+        const tokenSymbol = TRACKED_TOKENS[log.address.toLowerCase()] || "TOKEN";
+        const decimals = tokenSymbol === "ETH" ? 18 : 6;
+        const amount = value / Math.pow(10, decimals);
+
+        let valueUsd = amount;
+        if (tokenSymbol === "ETH") valueUsd = amount * 2500;
+        else if (tokenSymbol === "USDT" || tokenSymbol === "USDC") valueUsd = amount;
+
+        // Only track very large transfers (> $1M for stables, > $500k for ETH)
+        const minUsd = tokenSymbol === "ETH" ? 500000 : 1000000;
+        if (valueUsd < minUsd) continue;
+
+        transfers.push({
+          chain,
+          token: log.address,
+          symbol: tokenSymbol,
+          amount,
+          valueUsd,
+          from: "0x" + (log.topics?.[1] || "").slice(26),
+          to: "0x" + (log.topics?.[2] || "").slice(26),
+          txHash: log.transactionHash || "",
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err: any) {
+      // Silently fail
+    }
+
+    return transfers;
   }
 
   async fetchTokenUnlocks(): Promise<TokenUnlock[]> {

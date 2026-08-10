@@ -93,7 +93,51 @@ export class OnchainIntelAgent {
         }
       }
 
-      // 3. DEX volume spikes (tokens pumping on Uniswap before CEX listings)
+      // 3. Bridge flows + Whale transfers (cross-chain and large movements)
+      let bridgeCount = 0;
+      let whaleCount = 0;
+
+      try {
+        const bridgeFlows = await onchainProvider.fetchBridgeFlows("ethereum");
+        bridgeCount = bridgeFlows.length;
+        for (const flow of bridgeFlows) {
+          candidates.push({
+            symbol: flow.symbol,
+            chain: flow.chain,
+            signalType: flow.direction === "in" ? "EXCHANGE_INFLOW" : "EXCHANGE_OUTFLOW",
+            direction: flow.direction === "in" ? "long" : "short",
+            confidence: 55,
+            score: 50,
+            details: `${flow.symbol} bridged ${flow.direction === "in" ? "into" : "out of"} Ethereum via ${flow.bridgeName}: $${(flow.amount / 1e6).toFixed(1)}M`,
+            valueUsd: flow.valueUsd,
+          });
+        }
+      } catch { /* bridge detection is best-effort */ }
+
+      try {
+        const whaleXfers = await onchainProvider.fetchWhaleTransfers("ethereum");
+        whaleCount = whaleXfers.length;
+        for (const wt of whaleXfers) {
+          candidates.push({
+            symbol: wt.symbol,
+            chain: wt.chain,
+            signalType: "EXCHANGE_OUTFLOW",
+            direction: "long",
+            confidence: 60,
+            score: 55,
+            details: `🐋 Whale moved ${wt.symbol === "ETH" ? wt.amount.toFixed(2) + " ETH" : "$" + (wt.amount / 1e6).toFixed(1) + "M " + wt.symbol} ($${wt.valueUsd >= 1e6 ? (wt.valueUsd / 1e6).toFixed(1) + "M" : (wt.valueUsd / 1000).toFixed(0) + "K"})`,
+            valueUsd: wt.valueUsd,
+          });
+        }
+      } catch (err: any) {
+        logger.warn(`Whale scan failed: ${err.message}`);
+      }
+
+      if (bridgeCount + whaleCount > 0) {
+        logger.info({ bridgeFlows: bridgeCount, whaleXfers: whaleCount }, "Bridge/whale data scanned");
+      }
+
+      // 5. DEX volume spikes + new pairs
       try {
         const dexSpikes = await dexProvider.fetchVolumeSpikes("ethereum");
         for (const spike of dexSpikes.slice(0, 10)) {
