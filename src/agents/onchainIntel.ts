@@ -7,7 +7,8 @@ import type { TradeSignal, AgentResult, Chain } from "../types/signals";
 interface OnchainSignal {
   symbol: string;
   chain: Chain;
-  signalType: "BRIDGE_INFLOW" | "EXCHANGE_OUTFLOW" | "TOKEN_UNLOCK" | "ACCUMULATION" | "WHALE_BUY";
+  signalType: "EXCHANGE_OUTFLOW" | "EXCHANGE_INFLOW" | "TOKEN_UNLOCK";
+  direction: "long" | "short";
   confidence: number;
   score: number;
   details: string;
@@ -16,6 +17,7 @@ interface OnchainSignal {
 
 export class OnchainIntelAgent {
   private name = "ONCHAIN_INTEL";
+  private processedTxHashes = new Set<string>();
 
   async analyze(): Promise<AgentResult<TradeSignal>> {
     const startTime = Date.now();
@@ -23,115 +25,126 @@ export class OnchainIntelAgent {
     const candidates: OnchainSignal[] = [];
 
     try {
-      const [bridgeFlows, exchangeFlows, tokenUnlocks] = await Promise.all([
-        onchainProvider.fetchBridgeFlows(),
-        onchainProvider.fetchExchangeNetflows("ethereum"),
-        onchainProvider.fetchTokenUnlocks(),
-      ]);
+      // 1. Exchange netflows (bulk USDT/USDC transfers)
+      const exchangeFlows = await onchainProvider.fetchExchangeNetflows("ethereum");
 
-      // 1. Bridge inflows = money entering chain = bullish chain narrative
-      const chainFlows = new Map<string, { inflow: number; outflow: number }>();
-      for (const flow of bridgeFlows) {
-        const curr = chainFlows.get(flow.chain) || { inflow: 0, outflow: 0 };
-        if (flow.direction === "in") curr.inflow += flow.valueUsd;
-        else curr.outflow += flow.valueUsd;
-        chainFlows.set(flow.chain, curr);
-      }
+      for (const flow of exchangeFlows) {
+        if (this.processedTxHashes.has(flow.token + flow.amount)) continue;
+        this.processedTxHashes.add(flow.token + flow.amount);
 
-      for (const [chain, flows] of chainFlows) {
-        const net = flows.inflow - flows.outflow;
-        if (net > 100000) {
+        if (flow.direction === "outflow" && flow.valueUsd > 50000) {
           candidates.push({
-            symbol: chain.toUpperCase(),
-            chain: chain as Chain,
-            signalType: "BRIDGE_INFLOW",
+            symbol: flow.symbol,
+            chain: flow.chain,
+            signalType: "EXCHANGE_OUTFLOW",
+            direction: "long",
+            confidence: 65,
+            score: 60,
+            details: `${flow.symbol} outflow from ${flow.exchange}: $${(flow.amount / 1000000).toFixed(1)}M`,
+            valueUsd: flow.valueUsd,
+          });
+        } else if (flow.direction === "inflow" && flow.valueUsd > 200000) {
+          candidates.push({
+            symbol: flow.symbol,
+            chain: flow.chain,
+            signalType: "EXCHANGE_INFLOW",
+            direction: "short",
             confidence: 60,
-            score: Math.min(50 + (net / 100000), 80),
-            details: `${chain} receiving ${(net / 1000000).toFixed(1)}M in bridge inflows`,
-            valueUsd: net,
+            score: 55,
+            details: `${flow.symbol} inflow to ${flow.exchange}: $${(flow.amount / 1000000).toFixed(1)}M`,
+            valueUsd: flow.valueUsd,
           });
         }
       }
 
-      // 2. Exchange outflows = accumulation = bullish
-      const outflows = exchangeFlows.filter(f => f.direction === "outflow" && f.valueUsd > 50000);
-      for (const outflow of outflows) {
-        candidates.push({
-          symbol: outflow.symbol,
-          chain: outflow.chain,
-          signalType: "EXCHANGE_OUTFLOW",
-          confidence: 65,
-          score: Math.min(50 + (outflow.valueUsd / 10000), 75),
-          details: `Large ${outflow.symbol} outflow from ${outflow.exchange}: $${outflow.amount.toLocaleString()}`,
-          valueUsd: outflow.valueUsd,
-        });
-      }
-
-      // 3. Token unlocks = sell pressure = bearish
+      // 2. Token unlocks
+      const tokenUnlocks = await onchainProvider.fetchTokenUnlocks();
       for (const unlock of tokenUnlocks) {
         if (unlock.valueUsd > 500000) {
-          const daysUntilUnlock = (unlock.unlockDate - Date.now()) / (86400 * 1000);
-          if (daysUntilUnlock <= 7) {
+          const daysUntil = (unlock.unlockDate - Date.now()) / (86400 * 1000);
+          if (daysUntil <= 7 && daysUntil >= 0) {
             candidates.push({
               symbol: unlock.symbol,
               chain: unlock.chain,
               signalType: "TOKEN_UNLOCK",
+              direction: "short",
               confidence: 70,
-              score: 60,
-              details: `${unlock.project}: $${(unlock.valueUsd / 1000000).toFixed(1)}M unlock in ${daysUntilUnlock.toFixed(0)}d (${unlock.percentage}% supply)`,
+              score: 65,
+              details: `${unlock.project}: $${(unlock.valueUsd / 1000000).toFixed(1)}M unlock in ${daysUntil.toFixed(0)}d (${unlock.percentage}% supply)`,
               valueUsd: unlock.valueUsd,
             });
           }
         }
       }
 
-      // Convert candidates to signals
+      // Convert to signals
       for (const c of candidates) {
-        const signal = this.buildSignal(c);
-        if (signal.confidence >= config.MIN_CONVICTION_SCORE) {
-          signals.push(signal);
-        }
+        signals.push(this.buildSignal(c));
       }
 
-      logger.info({
-        agent: this.name,
-        bridgeFlows: bridgeFlows.length,
-        exchangeFlows: exchangeFlows.length,
-        tokenUnlocks: tokenUnlocks.length,
-        signalsGenerated: signals.length,
-      }, `${this.name} scan complete`);
-    } catch (err: any) {
-      logger.error({ agent: this.name, err: err.message }, `${this.name} failed`);
-    }
+      // Persist events to DB
+      for (const flow of exchangeFlows.slice(0, 20)) {
+        try {
+          await prisma.onchainEvent.create({
+            data: {
+              chain: flow.chain,
+              eventType: flow.direction === "outflow" ? "exchange_outflow" : "exchange_inflow",
+              symbol: flow.symbol,
+              amount: flow.amount,
+              valueUsd: flow.valueUsd,
+              fromAddress: "",
+              toAddress: "",
+              txHash: "",
+              timestamp: new Date(flow.timestamp),
+            },
+          });
+        } catch { /* skip duplicates */ }
+      }
 
-    return {
-      agent: this.name,
-      signals,
-      metrics: {
+      const metrics = {
         candidatesAnalyzed: candidates.length,
         signalsGenerated: signals.length,
         durationMs: Date.now() - startTime,
-      },
-    };
+      };
+
+      const totalFlows = exchangeFlows.length + tokenUnlocks.length;
+      if (totalFlows > 0 || signals.length > 0) {
+        logger.info({
+          agent: this.name,
+          exchangeFlows: exchangeFlows.length,
+          tokenUnlocks: tokenUnlocks.length,
+          signalsGenerated: signals.length,
+        }, `${this.name} scan complete`);
+      }
+
+      return { agent: this.name, signals, metrics };
+    } catch (err: any) {
+      logger.error({ agent: this.name, err: err.message }, `${this.name} failed`);
+      return {
+        agent: this.name,
+        signals: [],
+        metrics: { candidatesAnalyzed: 0, signalsGenerated: 0, durationMs: Date.now() - startTime },
+      };
+    }
   }
 
   private buildSignal(c: OnchainSignal): TradeSignal {
-    const isBearish = c.signalType === "TOKEN_UNLOCK";
-
     return {
       type: "ONCHAIN",
       symbol: c.symbol,
       chain: c.chain,
-      direction: isBearish ? "short" : "long",
+      direction: c.direction,
       confidence: c.confidence,
       score: c.score,
-      leverage: 3,
+      leverage: 2,
       catalyst: c.details,
-      thesis: `On-chain intelligence detected ${c.signalType.replace("_", " ").toLowerCase()}. ${c.details}`,
+      thesis: `On-chain detected ${c.details}. ` +
+        `${c.signalType === "EXCHANGE_OUTFLOW" ? "Large withdrawals from exchanges often indicate accumulation or cold storage — historically bullish." : ""}` +
+        `${c.signalType === "EXCHANGE_INFLOW" ? "Large deposits to exchanges often precede sell pressure — historically bearish." : ""}` +
+        `${c.signalType === "TOKEN_UNLOCK" ? "Upcoming token unlock may create sell pressure from early investors/team." : ""}`,
       sources: ["ONCHAIN"],
       agentScores: { ONCHAIN_INTEL: c.score },
-      bridgeFlowUsd: c.signalType === "BRIDGE_INFLOW" ? c.valueUsd : undefined,
-      exchangeNetflow: c.signalType === "EXCHANGE_OUTFLOW" ? -c.valueUsd : c.valueUsd,
+      exchangeNetflow: c.signalType.includes("EXCHANGE") ? c.valueUsd : undefined,
     };
   }
 }
