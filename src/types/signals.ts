@@ -1,6 +1,6 @@
 export type Direction = "long" | "short";
 export type SignalStatus = "ACTIVE" | "EXECUTED" | "REJECTED" | "CLOSED" | "EXPIRED";
-export type SignalType = "MEME" | "SMART_MONEY" | "ONCHAIN" | "TECHNICAL" | "SOCIAL" | "RESEARCH";
+export type SignalType = "LISTING" | "MEME" | "SMART_MONEY" | "ONCHAIN" | "TECHNICAL" | "SOCIAL" | "RESEARCH";
 export type Chain = "ethereum" | "bsc" | "solana" | "base" | "arbitrum" | "polygon" | "avalanche" | "unknown";
 export type ExchangeId = "binance" | "mexc" | "bybit" | "bitget" | "okx" | "kucoin" | "gate";
 

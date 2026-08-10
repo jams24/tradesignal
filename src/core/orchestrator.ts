@@ -9,6 +9,7 @@ import { smartMoneyAgent } from "../agents/smartMoney";
 import { onchainIntelAgent } from "../agents/onchainIntel";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import { socialNarrativeAgent } from "../agents/socialNarrative";
+import { listingMonitorAgent } from "../agents/listingMonitor";
 import { riskManagerAgent } from "../agents/riskManager";
 import { executionAgent } from "../agents/execution";
 
@@ -26,7 +27,7 @@ class Orchestrator {
     logger.info("═══════════════════════════════════════");
     logger.info("  CryptoSignalDeep — Multi-Agent Alpha");
     logger.info("═══════════════════════════════════════");
-    logger.info("Agents: MemeScout | SmartMoney | OnchainIntel | TechnicalAlpha | SocialNarrative | Research | Risk | Execution");
+    logger.info("Agents: ListingMonitor | MemeScout | SmartMoney | OnchainIntel | TechnicalAlpha | SocialNarrative | Research | Risk | Execution");
     logger.info("Mode: Semi-Auto with one-click execution");
     logger.info("═══════════════════════════════════════");
 
@@ -54,12 +55,17 @@ class Orchestrator {
 
     await telegramBot.sendAlert(
       "CryptoSignalDeep is online.\n\n" +
-      "Agents: MemeScout | SmartMoney | OnchainIntel | TechnicalAlpha | SocialNarrative\n" +
+      "Agents: ListingMonitor | MemeScout | SmartMoney | OnchainIntel | TechnicalAlpha | SocialNarrative\n" +
       "Pipeline runs every 10 min. First scan starting in 5s..."
     );
   }
 
   private scheduleAgentRuns(): void {
+    // Listing Monitor — every 1 minute (new listings are time-critical)
+    this.intervals.push(setInterval(async () => {
+      await this.runAgent("LISTING_MONITOR", listingMonitorAgent);
+    }, 60 * 1000));
+
     // Meme Scout — every MEME_SCOUT_INTERVAL minutes
     this.intervals.push(setInterval(async () => {
       await this.runAgent("MEME_SCOUT", memeScoutAgent);
@@ -113,6 +119,7 @@ class Orchestrator {
     try {
       // Step 1: Run all agents in parallel
       const agentResults = await Promise.all([
+        listingMonitorAgent.analyze(),
         memeScoutAgent.analyze(),
         smartMoneyAgent.analyze(),
         onchainIntelAgent.analyze(),
