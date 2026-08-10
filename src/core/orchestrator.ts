@@ -51,6 +51,12 @@ class Orchestrator {
     this.registerShutdown();
 
     logger.info("Orchestrator started — all agents running");
+
+    await telegramBot.sendAlert(
+      "CryptoSignalDeep is online.\n\n" +
+      "Agents: MemeScout | SmartMoney | OnchainIntel | TechnicalAlpha | SocialNarrative\n" +
+      "Pipeline runs every 10 min. First scan starting in 5s..."
+    );
   }
 
   private scheduleAgentRuns(): void {

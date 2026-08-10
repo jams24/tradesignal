@@ -49,7 +49,7 @@ export class SignalEngine extends EventEmitter {
     const groupedSymbols = new Set(groups.map(g => g.key));
     const soloSignals = allSignals.filter(s => {
       const key = `${s.symbol}:${s.chain}:${s.direction}`;
-      return !groupedSymbols.has(key) && s.confidence >= 70;
+      return !groupedSymbols.has(key) && s.confidence >= 50;
     });
 
     const finalSignals = [...compositeSignals, ...soloSignals]
