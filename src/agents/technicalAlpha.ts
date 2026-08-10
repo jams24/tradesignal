@@ -240,39 +240,56 @@ export class TechnicalAlphaAgent {
       for (const { symbol, exchange, rate } of rates) {
         const cleanSymbol = symbol.replace("/USDT:USDT", "").replace("/USDT", "");
 
-        if (rate > 0.002) {
-          signals.push({
-            type: "TECHNICAL",
-            symbol: cleanSymbol,
-            chain: "unknown",
-            direction: "short",
-            confidence: 60,
-            score: 60,
-            leverage: 3,
-            exchange,
-            catalyst: `Extreme funding rate ${(rate * 100).toFixed(3)}% — crowded longs on ${exchange}`,
-            thesis: `Funding rate at ${(rate * 100).toFixed(3)}% indicates overcrowded longs. ` +
-                   `Mean reversion expected. Short with tight stop.`,
-            sources: ["TECHNICAL"],
-            agentScores: { TECHNICAL_ALPHA: 55 },
-          });
-        } else if (rate < -0.0015) {
-          signals.push({
-            type: "TECHNICAL",
-            symbol: cleanSymbol,
-            chain: "unknown",
-            direction: "long",
-            confidence: 60,
-            score: 60,
-            leverage: 3,
-            exchange,
-            catalyst: `Negative funding ${(rate * 100).toFixed(3)}% — crowded shorts on ${exchange}`,
-            thesis: `Negative funding at ${(rate * 100).toFixed(3)}% suggests crowded shorts. ` +
-                   `Potential short squeeze.`,
-            sources: ["TECHNICAL"],
-            agentScores: { TECHNICAL_ALPHA: 55 },
-          });
-        }
+        if (Math.abs(rate) < 0.0015) continue;
+
+        // Fetch current price for TP/SL
+        let price = 0;
+        try {
+          const ex = cexProvider.getExchange(exchange);
+          if (ex) {
+            const ticker = await ex.fetchTicker(symbol);
+            price = ticker.last || 0;
+          }
+        } catch { /* best effort */ }
+
+        const direction: Direction = rate > 0.002 ? "short" : "long";
+        const catalyst = rate > 0.002
+          ? `Extreme funding rate ${(rate * 100).toFixed(3)}% — crowded longs on ${exchange}`
+          : `Negative funding ${(rate * 100).toFixed(3)}% — crowded shorts on ${exchange}`;
+        const thesis = rate > 0.002
+          ? `Funding rate at ${(rate * 100).toFixed(3)}% indicates overcrowded longs. Mean reversion expected.`
+          : `Negative funding at ${(rate * 100).toFixed(3)}% suggests crowded shorts. Potential short squeeze.`;
+
+        const slPct = 7;
+        const stopLoss = price > 0
+          ? (direction === "long" ? price * (1 - slPct / 100) : price * (1 + slPct / 100))
+          : 0;
+        const tp1 = price > 0
+          ? (direction === "long" ? price * 1.10 : price * 0.90)
+          : 0;
+
+        signals.push({
+          type: "TECHNICAL",
+          symbol: cleanSymbol,
+          chain: "unknown",
+          direction,
+          confidence: 60,
+          score: 60,
+          leverage: 3,
+          exchange,
+          price: price || undefined,
+          entryLow: price ? parseFloat((price * 0.998).toPrecision(6)) : undefined,
+          entryHigh: price ? parseFloat((price * 1.002).toPrecision(6)) : undefined,
+          tp1: tp1 ? parseFloat(tp1.toPrecision(6)) : undefined,
+          tp2: price ? parseFloat((direction === "long" ? price * 1.20 : price * 0.80).toPrecision(6)) : undefined,
+          tp3: price ? parseFloat((direction === "long" ? price * 1.35 : price * 0.65).toPrecision(6)) : undefined,
+          stopLoss: stopLoss ? parseFloat(stopLoss.toPrecision(6)) : undefined,
+          tp1Pct: "10", tp2Pct: "20", tp3Pct: "35", slPct: "7",
+          catalyst,
+          thesis,
+          sources: ["TECHNICAL"],
+          agentScores: { TECHNICAL_ALPHA: 55 },
+        });
       }
     } catch (err: any) {
       logger.error(`Funding rate analysis failed: ${err.message}`);
