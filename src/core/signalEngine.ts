@@ -56,8 +56,13 @@ export class SignalEngine extends EventEmitter {
       .sort((a, b) => b.score - a.score)
       .slice(0, 30);
 
-    // Persist signals
+    // Persist signals (dedup by symbol — only first alert per symbol)
+    const seenSymbols = new Set<string>();
     for (const signal of finalSignals) {
+      const key = `${signal.symbol}:${signal.direction}`;
+      if (seenSymbols.has(key)) continue;
+      seenSymbols.add(key);
+
       try {
         await prisma.signal.create({
           data: {

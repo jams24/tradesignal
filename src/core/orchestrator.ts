@@ -15,6 +15,7 @@ import { executionAgent } from "../agents/execution";
 
 import { researchAgent } from "../core/researchAgent";
 import { signalEngine } from "../core/signalEngine";
+import { performanceTracker } from "../core/performanceTracker";
 import { telegramBot } from "../alerts/telegram";
 
 import type { AgentResult } from "../types/signals";
@@ -45,7 +46,10 @@ class Orchestrator {
     // 4. Start stop-loss monitor
     this.scheduleStopLossCheck();
 
-    // 5. Start portfolio reporting
+    // 5. Start performance tracker
+    this.schedulePerformanceRefresh();
+
+    // 6. Start portfolio reporting
     this.schedulePortfolioReport();
 
     // 6. Register graceful shutdown
@@ -196,6 +200,16 @@ class Orchestrator {
     } catch (err: any) {
       logger.error({ err: err.message }, "Pipeline run failed");
     }
+  }
+
+  private schedulePerformanceRefresh(): void {
+    this.intervals.push(setInterval(async () => {
+      try {
+        await performanceTracker.refresh();
+      } catch (err: any) {
+        logger.error({ err: err.message }, "Performance refresh failed");
+      }
+    }, 2 * 60 * 1000)); // every 2 minutes
   }
 
   private scheduleStopLossCheck(): void {

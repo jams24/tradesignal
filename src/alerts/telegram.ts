@@ -9,6 +9,7 @@ import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import { onchainIntelAgent } from "../agents/onchainIntel";
 import { dexProvider } from "../data/providers/dex";
 import { solanaProvider } from "../data/providers/solana";
+import { performanceTracker } from "../core/performanceTracker";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
@@ -53,6 +54,7 @@ export class TelegramAlertBot {
     this.bot.onText(/\/trending/, (msg) => this.handleTrending(msg));
     this.bot.onText(/\/funding/, (msg) => this.handleFunding(msg));
     this.bot.onText(/\/dex/, (msg) => this.handleDex(msg));
+    this.bot.onText(/\/perf/, (msg) => this.handlePerformance(msg));
   }
 
   private registerCallbacks(): void {
@@ -607,6 +609,48 @@ export class TelegramAlertBot {
         { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
     } catch (err: any) {
       await this.bot.sendMessage(chatId, `DEX scan failed: ${err.message}`);
+    }
+  }
+
+  private async handlePerformance(msg: TelegramBot.Message): Promise<void> {
+    const chatId = msg.chat.id.toString();
+    await this.bot.sendMessage(chatId, "\u{1F4CA} Calculating signal performance...");
+
+    try {
+      await performanceTracker.refresh();
+      const summary = performanceTracker.getSummary();
+      const tracked = performanceTracker.getTracked();
+
+      if (tracked.length === 0) {
+        await this.bot.sendMessage(chatId,
+          "No signals tracked yet. Signals are tracked from their first alert — wait for the pipeline to generate signals with prices.",
+          { reply_markup: this.mainMenuKeyboard() });
+        return;
+      }
+
+      const parts: string[] = [];
+      parts.push(`\u{1F4C8} <b>Signal Performance</b>`);
+      parts.push(`Total signals: ${summary.total} | \u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down`);
+      parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}%`);
+      parts.push(`TP1 hit: ${summary.tp1Hit} | SL hit: ${summary.slHit}`);
+      parts.push("");
+
+      // Show top 10 tracked signals
+      for (const s of tracked.slice(0, 10)) {
+        const emoji = s.pnlPct === null ? "\u26AA" :
+                       s.pnlPct > 0 ? "\u{1F7E2}" : "\u{1F534}";
+        const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "pending";
+        const priceStr = s.alertPrice ? ` $${s.alertPrice.toFixed(4)}` : "";
+        const curStr = s.currentPrice ? ` \u2192 $${s.currentPrice.toFixed(4)}` : "";
+        const flags = [s.hitTp1 ? "\u2705TP1" : "", s.hitSl ? "\u{1F6D1}SL" : ""].filter(Boolean).join(" ");
+
+        parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr} | ${s.age}${flags ? " " + flags : ""}`);
+      }
+
+      await this.bot.sendMessage(chatId, parts.join("\n"),
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
+    } catch (err: any) {
+      await this.bot.sendMessage(chatId, `Error: ${err.message}`);
     }
   }
 
