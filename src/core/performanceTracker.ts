@@ -1,7 +1,42 @@
 import { logger } from "../utils/logger";
 import { prisma } from "../db/prisma";
-import { cexProvider } from "../data/providers/cex";
-import type { ExchangeId, Direction } from "../types/signals";
+import type { Direction } from "../types/signals";
+
+async function fetchPricesFromBinance(symbols: string[]): Promise<Map<string, number>> {
+  const priceMap = new Map<string, number>();
+  try {
+    // Binance public API — no auth needed, instant response
+    const axios = require("axios");
+    const { data } = await axios.get("https://api.binance.com/api/v3/ticker/price", { timeout: 5000 });
+    for (const item of data || []) {
+      if (item.symbol.endsWith("USDT")) {
+        const sym = item.symbol.replace("USDT", "");
+        if (symbols.includes(sym)) {
+          priceMap.set(sym, parseFloat(item.price));
+        }
+      }
+    }
+  } catch { /* silent */ }
+
+  // Also try Gate for symbols not found on Binance
+  const missing = symbols.filter(s => !priceMap.has(s));
+  if (missing.length > 0) {
+    try {
+      const axios = require("axios");
+      for (const sym of missing.slice(0, 5)) {
+        try {
+          const { data } = await axios.get(
+            `https://api.gate.io/api2/1/ticker/${sym.toLowerCase()}_usdt`,
+            { timeout: 3000 },
+          );
+          if (data?.last) priceMap.set(sym, parseFloat(data.last));
+        } catch { /* next */ }
+      }
+    } catch { /* silent */ }
+  }
+
+  return priceMap;
+}
 
 export interface TrackedSignal {
   id: string;
@@ -47,32 +82,9 @@ export class PerformanceTracker {
         return true;
       });
 
-      // Fetch current prices — try Binance, Gate, Bybit
+      // Fetch current prices using Binance public API (instant, no auth)
       const symbols = uniqueSignals.map(s => s.symbol);
-      const priceMap = new Map<string, number>();
-
-      const exchanges = ["binance", "gate", "bybit", "mexc", "bitget"] as const;
-      for (const exId of exchanges) {
-        const ex = cexProvider.getExchange(exId);
-        if (!ex) continue;
-        try {
-          const remaining = symbols.filter(s => !priceMap.has(s));
-          if (remaining.length === 0) break;
-
-          // Try both spot (/USDT) and perp (/USDT:USDT) formats
-          const spotPairs = remaining.map(s => `${s}/USDT`);
-          const perpPairs = remaining.map(s => `${s}/USDT:USDT`);
-          const allPairs = [...spotPairs, ...perpPairs].slice(0, 50);
-
-          const tickers = await ex.fetchTickers(allPairs) as Record<string, any>;
-          for (const [pair, ticker] of Object.entries(tickers)) {
-            const sym = pair.replace("/USDT:USDT", "").replace("/USDT", "");
-            if (ticker.last && !priceMap.has(sym)) {
-              priceMap.set(sym, ticker.last);
-            }
-          }
-        } catch { /* next exchange */ }
-      }
+      const priceMap = await fetchPricesFromBinance(symbols);
 
       // Build tracked signals
       const result: TrackedSignal[] = [];
