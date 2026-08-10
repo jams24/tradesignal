@@ -59,6 +59,8 @@ const KOL_WEIGHTS: Record<number, number> = {
 
 export class SocialDataProvider {
   private twitterBearer: string;
+  private twitterCache: Map<string, { data: SocialSignal[]; ts: number }> = new Map();
+  private readonly CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
   constructor() {
     this.twitterBearer = config.TWITTER_BEARER_TOKEN || "";
@@ -112,17 +114,42 @@ export class SocialDataProvider {
 
   async searchTwitterCashtags(symbols: string[]): Promise<SocialSignal[]> {
     if (!this.twitterBearer) return [];
-    const signals: SocialSignal[] = [];
+    if (symbols.length === 0) return [];
 
-    for (const symbol of symbols.slice(0, 10)) {
+    const uniqueSymbols = [...new Set(symbols.map(s => s.toUpperCase()))].slice(0, 10);
+
+    // Serve from cache if fresh
+    const cacheKeys = uniqueSymbols.map(s => `$${s}`);
+    const now = Date.now();
+    const cachedResults: SocialSignal[] = [];
+    const uncached: string[] = [];
+
+    for (const sym of uniqueSymbols) {
+      const entry = this.twitterCache.get(sym);
+      if (entry && now - entry.ts < this.CACHE_TTL) {
+        cachedResults.push(...entry.data);
+      } else {
+        uncached.push(sym);
+      }
+    }
+
+    if (uncached.length === 0) return cachedResults;
+
+    // Batch query: combine up to 5 symbols per query to save API calls
+    const allSignals: SocialSignal[] = [...cachedResults];
+
+    for (let i = 0; i < uncached.length; i += 5) {
+      const batch = uncached.slice(i, i + 5);
+      const query = batch.map(s => `$${s}`).join(" OR ");
+      const fullQuery = `(${query}) crypto -is:retweet lang:en`;
+
       try {
-        const query = `$${symbol} crypto -is:retweet lang:en`;
         const { data } = await axios.get(
           "https://api.twitter.com/2/tweets/search/recent",
           {
             params: {
-              query,
-              max_results: 20,
+              query: fullQuery,
+              max_results: 10,
               "tweet.fields": ["public_metrics", "created_at", "author_id"].join(","),
               "user.fields": ["public_metrics", "username", "name"].join(","),
               expansions: "author_id",
@@ -135,42 +162,60 @@ export class SocialDataProvider {
         const users = (data?.includes?.users || []) as any[];
         const userMap = new Map(users.map((u: any) => [u.id, u]));
 
+        const batchSignals: SocialSignal[] = [];
+
         for (const tweet of data?.data || []) {
           const user = userMap.get(tweet.author_id);
           if (!user) continue;
 
           const username = user.username?.toLowerCase() || "";
-          const followerCount = user.public_metrics?.followers_count || 0;
           const kolTier = KNOWN_KOLS[username] ?? -1;
-          const isKOL = kolTier >= 0;
+          if (kolTier === 0) continue;
 
-          if (kolTier === 0) continue; // skip banned accounts
+          // Find which symbol this tweet matches
+          const text = (tweet.text || "").toUpperCase();
+          const matchedSymbol = batch.find(s => text.includes(`$${s}`)) || batch[0];
 
-          signals.push({
+          batchSignals.push({
             platform: "twitter",
-            symbol,
-            keyword: `$${symbol}`,
+            symbol: matchedSymbol,
+            keyword: `$${matchedSymbol}`,
             content: tweet.text || "",
             authorId: tweet.author_id,
             authorName: username,
-            authorFollowers: followerCount,
+            authorFollowers: user.public_metrics?.followers_count || 0,
             engagement: (tweet.public_metrics?.like_count || 0) +
                         (tweet.public_metrics?.retweet_count || 0) +
                         (tweet.public_metrics?.reply_count || 0),
-            sentiment: 0, // will be calculated by LLM agent
-            isKOL,
+            sentiment: 0,
+            isKOL: kolTier >= 0,
             url: `https://twitter.com/${username}/status/${tweet.id}`,
             timestamp: Date.parse(tweet.created_at) || Date.now(),
           });
         }
+
+        // Cache per symbol
+        for (const sym of batch) {
+          const symSignals = batchSignals.filter(s => s.symbol === sym);
+          this.twitterCache.set(sym, { data: symSignals, ts: now });
+        }
+
+        allSignals.push(...batchSignals);
       } catch (err: any) {
-        if (err.response?.status !== 429) {
-          logger.error(`Twitter search failed for $${symbol}: ${err.message}`);
+        // 402 = quota exhausted, 429 = rate limited — stop making calls
+        if (err.response?.status === 402 || err.response?.status === 429) {
+          logger.warn(`Twitter API quota/rate limit hit — using cache only for the next hour`);
+          this.twitterCache.forEach((v) => { v.ts = now; }); // extend all caches
+          break;
+        }
+        if (err.response?.status === 401) {
+          logger.error("Twitter API unauthorized — check bearer token");
+          break;
         }
       }
     }
 
-    return signals;
+    return allSignals;
   }
 
   async fetchTokenSocialStats(coingeckoId: string): Promise<any> {
