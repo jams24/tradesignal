@@ -142,6 +142,7 @@ export class ListingMonitorAgent {
 
   private async scrapeBinanceAnnouncements(): Promise<Array<{ symbol: string; title: string }>> {
     const results: Array<{ symbol: string; title: string }> = [];
+    const skipWords = new Set(["multiple", "new", "usd", "margined", "tradfi", "perpetual", "contracts", "futures", "will", "launch", "list", "lists"]);
 
     try {
       const { data } = await axios.get(
@@ -164,7 +165,7 @@ export class ListingMonitorAgent {
         const futuresMatch = title.match(/(?:Futures\s+)?(?:Will\s+List|Lists?)\s+(\w+)/i);
 
         const symbol = listingMatch?.[1] || perpetualMatch?.[1] || futuresMatch?.[1];
-        if (symbol) {
+        if (symbol && !skipWords.has(symbol.toLowerCase())) {
           results.push({ symbol: symbol.toUpperCase(), title });
           logger.info(`Binance announcement: ${title}`);
         }

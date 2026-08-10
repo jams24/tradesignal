@@ -7,7 +7,7 @@ import { executionAgent } from "../agents/execution";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
-import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress } from "../utils/formatting";
+import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeMd } from "../utils/formatting";
 
 const SIGNAL_COOLDOWNS = new Map<string, number>();
 
@@ -208,9 +208,8 @@ export class TelegramAlertBot {
 
       const lines = signals.map((s, i) => {
         const scores = safeJson<string[]>(s.sources, []);
-        const agentScores = safeJson<Record<string, number>>(s.agentScores, {});
         const confluence = scores.length >= 2 ? ` \u{1F91D}${scores.length} agents` : "";
-        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} *${s.symbol}* ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${s.catalyst || ""}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
+        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} *${escapeMd(s.symbol)}* ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${escapeMd(s.catalyst || "")}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
       });
 
       await this.bot.sendMessage(msg.chat.id,
@@ -272,8 +271,8 @@ export class TelegramAlertBot {
 
       const top = result.signals.slice(0, 10);
       const lines = top.map((s, i) => {
-        const sigs = (s.catalyst || "").split("|").slice(0, 3).join(" | ");
-        return `${i + 1}. *${s.symbol}* ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
+        const sigs = escapeMd((s.catalyst || "").split("|").slice(0, 3).join(" | "));
+        return `${i + 1}. *${escapeMd(s.symbol)}* ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
       });
 
       await this.bot.sendMessage(chatId,
@@ -479,7 +478,7 @@ export class TelegramAlertBot {
       }
 
       const lines = fundingSignals.slice(0, 10).map(s =>
-        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} *${s.symbol}*\n${s.catalyst}`
+        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} *${escapeMd(s.symbol)}*\n${escapeMd(s.catalyst || "")}`
       );
 
       await this.bot.sendMessage(chatId,
@@ -579,9 +578,9 @@ export class TelegramAlertBot {
       : "";
 
     const parts: string[] = [
-      `${typeEmoji} *${signal.type}* — ${directionEmoji}`,
+      `${typeEmoji} *${escapeMd(signal.type)}* — ${directionEmoji}`,
       `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`,
-      `\u{1F48E} *${signal.symbol}*${signal.chain !== "unknown" ? ` (${signal.chain})` : ""}`,
+      `\u{1F48E} *${escapeMd(signal.symbol)}*${signal.chain !== "unknown" ? ` (${escapeMd(signal.chain)})` : ""}`,
     ];
 
     if (signal.price) parts.push(`\u{1F4B0} *Price*: $${formatPrice(signal.price)}`);
@@ -595,12 +594,12 @@ export class TelegramAlertBot {
     if (signal.tp3) parts.push(`\u2705 *TP3*: ${formatPrice(signal.tp3)} (${signal.tp3Pct}%)`);
     if (signal.stopLoss) parts.push(`\u{1F6D1} *SL*: ${formatPrice(signal.stopLoss)} (${signal.slPct}%)`);
 
-    parts.push(`\u{1F4DD} *Catalyst*: ${signal.catalyst}`);
+    parts.push(`\u{1F4DD} *Catalyst*: ${escapeMd(signal.catalyst)}`);
     parts.push(confluence);
-    if (signal.thesis) parts.push(`\u{1F9E0} *Thesis*: ${signal.thesis}`);
-    if (signal.deployerRisk) parts.push(`\u26A0 *Deployer*: ${signal.deployerRisk}`);
+    if (signal.thesis) parts.push(`\u{1F9E0} *Thesis*: ${escapeMd(signal.thesis)}`);
+    if (signal.deployerRisk) parts.push(`\u26A0 *Deployer*: ${escapeMd(signal.deployerRisk)}`);
     if (signal.redFlags?.length)
-      parts.push(`\u{1F6A9} *Red Flags*: ${signal.redFlags.join(", ")}`);
+      parts.push(`\u{1F6A9} *Red Flags*: ${signal.redFlags.map(f => escapeMd(f)).join(", ")}`);
     parts.push(`\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501`);
 
     const message = parts.join("\n");
