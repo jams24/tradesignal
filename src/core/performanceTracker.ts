@@ -72,6 +72,8 @@ export interface TrackedSignal {
   stopLoss: number | null;
   pnlPct: number | null;
   hitTp1: boolean;
+  hitTp2: boolean;
+  hitTp3: boolean;
   hitSl: boolean;
   createdAt: Date;
   age: string;
@@ -122,16 +124,22 @@ export class PerformanceTracker {
 
         let pnlPct: number | null = null;
         let hitTp1 = false;
+        let hitTp2 = false;
+        let hitTp3 = false;
         let hitSl = false;
 
         if (alertPrice && currentPrice && alertPrice > 0) {
           if (direction === "long") {
             pnlPct = ((currentPrice - alertPrice) / alertPrice) * 100;
             if (db.tp1 && currentPrice >= db.tp1) hitTp1 = true;
+            if (db.tp2 && currentPrice >= db.tp2) hitTp2 = true;
+            if (db.tp3 && currentPrice >= db.tp3) hitTp3 = true;
             if (db.stopLoss && currentPrice <= db.stopLoss) hitSl = true;
           } else {
             pnlPct = ((alertPrice - currentPrice) / alertPrice) * 100;
             if (db.tp1 && currentPrice <= db.tp1) hitTp1 = true;
+            if (db.tp2 && currentPrice <= db.tp2) hitTp2 = true;
+            if (db.tp3 && currentPrice <= db.tp3) hitTp3 = true;
             if (db.stopLoss && currentPrice >= db.stopLoss) hitSl = true;
           }
         }
@@ -155,6 +163,8 @@ export class PerformanceTracker {
           stopLoss: db.stopLoss || null,
           pnlPct,
           hitTp1,
+          hitTp2,
+          hitTp3,
           hitSl,
           createdAt: db.createdAt,
           age,
@@ -185,6 +195,8 @@ export class PerformanceTracker {
     bestPerformer: TrackedSignal | null;
     worstPerformer: TrackedSignal | null;
     tp1Hit: number;
+    tp2Hit: number;
+    tp3Hit: number;
     slHit: number;
   } {
     const all = this.getTracked().filter(s => s.pnlPct !== null);
@@ -199,6 +211,8 @@ export class PerformanceTracker {
       bestPerformer: sorted[0] || null,
       worstPerformer: sorted[sorted.length - 1] || null,
       tp1Hit: all.filter(s => s.hitTp1).length,
+      tp2Hit: all.filter(s => s.hitTp2).length,
+      tp3Hit: all.filter(s => s.hitTp3).length,
       slHit: all.filter(s => s.hitSl).length,
     };
   }

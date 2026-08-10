@@ -650,7 +650,7 @@ export class TelegramAlertBot {
       const parts: string[] = [];
       parts.push(`\u{1F4C8} <b>Signal Performance</b> (${offset + 1}-${Math.min(offset + PAGE_SIZE, sorted.length)} of ${sorted.length})`);
       parts.push(`\u{1F7E2} ${summary.profitable} up | \u{1F534} ${summary.unprofitable} down | \u26AA ${summary.total - summary.profitable - summary.unprofitable} n/a`);
-      parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}% | TP1: ${summary.tp1Hit} | SL: ${summary.slHit}`);
+      parts.push(`Avg PnL: ${summary.avgPnl >= 0 ? "+" : ""}${summary.avgPnl.toFixed(2)}% | TP1:${summary.tp1Hit} TP2:${summary.tp2Hit} TP3:${summary.tp3Hit} SL:${summary.slHit}`);
       parts.push("");
 
       for (const s of page) {
@@ -659,9 +659,14 @@ export class TelegramAlertBot {
         const pnlStr = s.pnlPct !== null ? `${s.pnlPct >= 0 ? "+" : ""}${s.pnlPct.toFixed(2)}%` : "n/a";
         const entryStr = s.alertPrice ? ` @ $${s.alertPrice.toFixed(6)}` : "";
         const curStr = s.currentPrice ? ` → $${s.currentPrice.toFixed(6)}` : "";
-        const flags = [s.hitTp1 ? "\u2705TP1" : "", s.hitSl ? "\u{1F6D1}SL" : ""].filter(Boolean).join(" ");
+        const tpFlags = [
+          s.hitTp1 ? "✅TP1" : "",
+          s.hitTp2 ? "✅TP2" : "",
+          s.hitTp3 ? "✅TP3" : "",
+          s.hitSl ? "🛑SL" : "",
+        ].filter(Boolean).join(" ");
 
-        parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr}${entryStr}${curStr} | ${s.age}${flags ? " " + flags : ""}`);
+        parts.push(`${emoji} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} | ${pnlStr}${entryStr}${curStr} | ${s.age}${tpFlags ? " " + tpFlags : ""}`);
       }
 
       const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
