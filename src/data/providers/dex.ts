@@ -106,6 +106,33 @@ export class DexDataProvider {
     }
   }
 
+  private async resolveTokenSymbol(chain: Chain, tokenAddress: string): Promise<string> {
+    // Check hardcoded list first
+    const known = TOKEN_SYMBOLS[tokenAddress.toLowerCase()];
+    if (known) return known;
+
+    // Try on-chain symbol() call
+    try {
+      const resp = await this.rpcCall(chain, "eth_call", [{
+        to: tokenAddress,
+        data: "0x95d89b41", // symbol()
+      }, "latest"]);
+
+      if (resp?.result && resp.result !== "0x") {
+        // Decode ABI-encoded string (offset + length + data)
+        const hex = resp.result.slice(2);
+        if (hex.length > 128) {
+          const strLen = parseInt(hex.slice(64, 128), 16) * 2;
+          const strHex = hex.slice(128, 128 + strLen);
+          const symbol = Buffer.from(strHex, "hex").toString("utf8").replace(/\0/g, "").trim();
+          if (symbol && symbol.length <= 12) return symbol;
+        }
+      }
+    } catch { /* fall through to address */ }
+
+    return resolveSymbol(tokenAddress);
+  }
+
   async fetchNewPairs(chain: Chain = "ethereum"): Promise<NewPairSignal[]> {
     const pairs: NewPairSignal[] = [];
 
@@ -193,9 +220,18 @@ export class DexDataProvider {
         if (!tokens) continue;
         const t0l = tokens.token0.toLowerCase();
         const t1l = tokens.token1.toLowerCase();
-        const s0 = TOKEN_SYMBOLS[t0l] || "";
-        const s1 = TOKEN_SYMBOLS[t1l] || "";
-        if (!s0 && !s1) continue;
+
+        // Resolve symbols (on-chain if needed)
+        const [s0, s1] = await Promise.all([
+          this.resolveTokenSymbol(chain, tokens.token0),
+          this.resolveTokenSymbol(chain, tokens.token1),
+        ]);
+
+        // Only include if we can estimate USD (at least one side known)
+        const known0 = !!TOKEN_SYMBOLS[t0l];
+        const known1 = !!TOKEN_SYMBOLS[t1l];
+        if (!known0 && !known1) continue;
+
         resolved.set(addr, { t0: t0l, t1: t1l, s0, s1 });
       }
 
@@ -212,9 +248,11 @@ export class DexDataProvider {
 
         if (volUsd < 10000) continue;
 
-        const primarySym = tok.s0 && !["WETH", "USDT", "USDC", "DAI"].includes(tok.s0) ? tok.s0
-          : tok.s1 && !["WETH", "USDT", "USDC", "DAI"].includes(tok.s1) ? tok.s1
-          : tok.s0 || resolveSymbol(tok.t0);
+        // Show the non-ETH/non-stable token as primary
+        const stableTokens = new Set(["WETH", "USDT", "USDC", "DAI", "BUSD", "FRAX"]);
+        const primarySym = !stableTokens.has(tok.s0) ? tok.s0
+          : !stableTokens.has(tok.s1) ? tok.s1
+          : tok.s0;
 
         signals.push({
           chain,
@@ -222,8 +260,8 @@ export class DexDataProvider {
           pairAddress: addr,
           token0: tok.t0,
           token1: tok.t1,
-          token0Symbol: tok.s0 || resolveSymbol(tok.t0),
-          token1Symbol: tok.s1 || resolveSymbol(tok.t1),
+          token0Symbol: tok.s0,
+          token1Symbol: tok.s1,
           volumeUsd: volUsd,
           swaps24h: data.swaps,
           isNew: false,
