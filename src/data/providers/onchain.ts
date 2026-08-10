@@ -26,11 +26,10 @@ export interface TokenUnlock {
 
 const RPC_LIST: Record<string, string[]> = {
   ethereum: [
+    "https://eth.drpc.org",
     "https://ethereum-rpc.publicnode.com",
     "https://1rpc.io/eth",
-    "https://eth.drpc.org",
     "https://rpc.ankr.com/eth",
-    "https://cloudflare-eth.com",
   ],
   bsc: [
     "https://bsc-dataseed.binance.org",
@@ -51,6 +50,8 @@ const KNOWN_EXCHANGES: Record<string, string> = {
   "0x28c6c06298d514db089934071355e5743bf21d60": "binance",
   "0x21a31ee1afc51d94c2efccaa2092ad1028285549": "binance",
   "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": "binance",
+  "0x9696f59e4d72e237be84ffd425dcad154bf96976": "binance",
+  "0xf89d7b9c864f589bbf53a82105107622b35eaa40": "bybit",
   "0x5041ed759dd4afc3a72b8192c143f72f4724081a": "okx",
   "0x75e89d5979e4f6fba9f97c104c2f0afb3f1dcb88": "mexc",
   "0x0d0707963952f2fba59dd06f2b425ace40b492fe": "gate",
@@ -58,11 +59,20 @@ const KNOWN_EXCHANGES: Record<string, string> = {
   "0x8103683202aa8da10563084f12aae4f0d1be53a7": "coinbase",
   "0x503828976d22510aad0201ac7ec88293211d23da": "coinbase",
   "0x3304e22ddaa22bcdc5f2265114e3ba6a5e59b68a": "coinbase",
+  "0xa9d1e08c7793af67e9d92fe308d5697fb81d3e43": "coinbase",
+  "0xe92d1a43df510f82c66382592a047d288f85226f": "kraken",
+  "0x267be1c1d684f78cb4f6a176c4911b741e4ffdc0": "kraken",
 };
 
 const EXCHANGE_ADDRESSES_LOWER = new Set(
   Object.keys(KNOWN_EXCHANGES).map(a => a.toLowerCase())
 );
+
+// Build lowercase-keyed lookup map
+const EXCHANGE_NAME_MAP: Record<string, string> = {};
+for (const [addr, name] of Object.entries(KNOWN_EXCHANGES)) {
+  EXCHANGE_NAME_MAP[addr.toLowerCase()] = name;
+}
 
 export class OnchainDataProvider {
   private rpcIndex: Record<string, number> = {};
@@ -77,7 +87,7 @@ export class OnchainDataProvider {
       try {
         const { data } = await axios.post(rpcs[idx], {
           jsonrpc: "2.0", id: 1, method, params,
-        }, { timeout: 8000 });
+        }, { timeout: 15000 });
         this.rpcIndex[chain] = idx; // remember working RPC
         return data;
       } catch { /* try next RPC */ }
@@ -97,8 +107,8 @@ export class OnchainDataProvider {
       const latest = await this.getLatestBlock(chain);
       if (latest === 0) return flows;
 
-      // Look at the last 50 blocks (~10 min on ETH)
-      const fromBlock = "0x" + Math.max(latest - 50, 0).toString(16);
+      // Look at the last 100 blocks (~20 min on ETH)
+      const fromBlock = "0x" + Math.max(latest - 100, 0).toString(16);
       const toBlock = "0x" + latest.toString(16);
 
       const transferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -115,7 +125,8 @@ export class OnchainDataProvider {
 
       const processed = new Set<string>();
 
-      for (const log of logs.slice(0, 50)) {
+      for (const log of logs) {
+        if (flows.length >= 20) break; // cap results
         const from = "0x" + (log.topics?.[1] || "").slice(26).toLowerCase();
         const to = "0x" + (log.topics?.[2] || "").slice(26).toLowerCase();
         const txHash = log.transactionHash;
@@ -124,9 +135,9 @@ export class OnchainDataProvider {
         processed.add(txHash);
 
         const fromExchange = EXCHANGE_ADDRESSES_LOWER.has(from) ?
-          KNOWN_EXCHANGES[from] || "unknown" : null;
+          EXCHANGE_NAME_MAP[from] || "unknown" : null;
         const toExchange = EXCHANGE_ADDRESSES_LOWER.has(to) ?
-          KNOWN_EXCHANGES[to] || "unknown" : null;
+          EXCHANGE_NAME_MAP[to] || "unknown" : null;
 
         if (!fromExchange && !toExchange) continue;
 
