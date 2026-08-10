@@ -1,13 +1,14 @@
 import { logger } from "../utils/logger";
 import { config } from "../utils/config";
 import { onchainProvider } from "../data/providers/onchain";
+import { dexProvider } from "../data/providers/dex";
 import { prisma } from "../db/prisma";
 import type { TradeSignal, AgentResult, Chain } from "../types/signals";
 
 interface OnchainSignal {
   symbol: string;
   chain: Chain;
-  signalType: "EXCHANGE_OUTFLOW" | "EXCHANGE_INFLOW" | "TOKEN_UNLOCK";
+  signalType: "EXCHANGE_OUTFLOW" | "EXCHANGE_INFLOW" | "TOKEN_UNLOCK" | "DEX_VOLUME" | "NEW_PAIR";
   direction: "long" | "short";
   confidence: number;
   score: number;
@@ -92,6 +93,52 @@ export class OnchainIntelAgent {
         }
       }
 
+      // 3. DEX volume spikes (tokens pumping on Uniswap before CEX listings)
+      try {
+        const dexSpikes = await dexProvider.fetchVolumeSpikes("ethereum");
+        for (const spike of dexSpikes.slice(0, 10)) {
+          const tokenSymbol = spike.token0Symbol !== "WETH" && spike.token0Symbol !== "USDT" && spike.token0Symbol !== "USDC"
+            ? spike.token0Symbol
+            : spike.token1Symbol !== "WETH" && spike.token1Symbol !== "USDT" && spike.token1Symbol !== "USDC"
+              ? spike.token1Symbol
+              : "TOKEN";
+
+          if (tokenSymbol === "TOKEN") continue;
+
+          candidates.push({
+            symbol: tokenSymbol,
+            chain: spike.chain,
+            signalType: "DEX_VOLUME",
+            direction: "long",
+            confidence: 70,
+            score: 65,
+            details: `DEX volume spike: $${(spike.volumeUsd / 1000).toFixed(0)}k on Uniswap V2 (${spike.swaps24h} swaps in ~1hr)`,
+            valueUsd: spike.volumeUsd,
+          });
+        }
+
+        // 4. New Uniswap pairs (potential new token launches)
+        const newPairs = await dexProvider.fetchNewPairs("ethereum");
+        for (const pair of newPairs.slice(0, 5)) {
+          candidates.push({
+            symbol: "NEW_TOKEN",
+            chain: pair.chain,
+            signalType: "DEX_VOLUME",
+            direction: "long",
+            confidence: 55,
+            score: 50,
+            details: `New Uniswap V2 pair created: ${pair.token0.slice(0, 10)}.../${pair.token1.slice(0, 10)}...`,
+            valueUsd: 0,
+          });
+        }
+
+        if (dexSpikes.length + newPairs.length > 0) {
+          logger.info({ dexSpikes: dexSpikes.length, newPairs: newPairs.length }, "DEX data scanned");
+        }
+      } catch (err: any) {
+        logger.warn(`DEX scan failed: ${err.message}`);
+      }
+
       // Convert to signals
       for (const c of candidates) {
         signals.push(this.buildSignal(c));
@@ -146,11 +193,19 @@ export class OnchainIntelAgent {
   private buildSignal(c: OnchainSignal): TradeSignal {
     const flowDesc = c.details;
 
-    const tokenTypeHint = c.symbol === "ETH" || c.symbol === "BTC"
-      ? `Large ${c.symbol} movement detected. ${c.direction === "long" ? "Withdrawals from exchanges suggest whale accumulation — historically precedes price increases." : "Deposits to exchanges suggest whales preparing to sell — historically precedes price drops."}`
-      : c.symbol === "USDT" || c.symbol === "USDC"
-        ? `${c.symbol} flow detected. ${c.direction === "long" ? "Stablecoins entering exchanges = buying power deploying — bullish for market." : "Stablecoins leaving exchanges — capital rotating out, neutral to slightly bearish."}`
-        : "";
+    let tokenTypeHint = "";
+    if (c.signalType === "DEX_VOLUME") {
+      tokenTypeHint = `DEX volume spike detected. ` +
+        `This token is seeing unusual trading activity on Uniswap — often a precursor to CEX listing or major announcement. ` +
+        `Monitor for continuation.`;
+    } else if (c.signalType === "NEW_PAIR") {
+      tokenTypeHint = `New Uniswap pair deployed. Early-stage token launches often see initial pumps. ` +
+        `Exercise caution — verify LP lock status and deployer history before entering.`;
+    } else if (c.symbol === "ETH" || c.symbol === "BTC") {
+      tokenTypeHint = `Large ${c.symbol} movement detected. ${c.direction === "long" ? "Withdrawals from exchanges suggest whale accumulation — historically precedes price increases." : "Deposits to exchanges suggest whales preparing to sell — historically precedes price drops."}`;
+    } else if (c.symbol === "USDT" || c.symbol === "USDC") {
+      tokenTypeHint = `${c.symbol} flow detected. ${c.direction === "long" ? "Stablecoins entering exchanges = buying power deploying — bullish for market." : "Stablecoins leaving exchanges — capital rotating out, neutral to slightly bearish."}`;
+    }
 
     return {
       type: "ONCHAIN",
@@ -159,12 +214,12 @@ export class OnchainIntelAgent {
       direction: c.direction,
       confidence: c.confidence,
       score: c.score,
-      leverage: c.symbol === "ETH" || c.symbol === "BTC" ? 3 : 2,
+      leverage: c.signalType === "DEX_VOLUME" ? 2 : 2,
       catalyst: flowDesc,
       thesis: tokenTypeHint,
       sources: ["ONCHAIN"],
       agentScores: { ONCHAIN_INTEL: c.score },
-      exchangeNetflow: c.direction === "long" ? c.valueUsd : -c.valueUsd,
+      exchangeNetflow: c.signalType.includes("EXCHANGE") ? c.valueUsd : undefined,
       rawData: {
         signalType: c.signalType,
         valueUsd: c.valueUsd,

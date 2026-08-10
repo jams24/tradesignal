@@ -7,6 +7,7 @@ import { executionAgent } from "../agents/execution";
 import { socialProvider } from "../data/providers/social";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import { onchainIntelAgent } from "../agents/onchainIntel";
+import { dexProvider } from "../data/providers/dex";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
@@ -50,6 +51,7 @@ export class TelegramAlertBot {
     this.bot.onText(/\/reject (.+)/, (msg, match) => this.handleExecReject(msg, match));
     this.bot.onText(/\/trending/, (msg) => this.handleTrending(msg));
     this.bot.onText(/\/funding/, (msg) => this.handleFunding(msg));
+    this.bot.onText(/\/dex/, (msg) => this.handleDex(msg));
   }
 
   private registerCallbacks(): void {
@@ -83,6 +85,9 @@ export class TelegramAlertBot {
           await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_onchain") {
           await this.handleOnchain(query.message!);
+          await this.bot.answerCallbackQuery(query.id);
+        } else if (data === "cmd_dex") {
+          await this.handleDex(query.message!);
           await this.bot.answerCallbackQuery(query.id);
         } else if (data === "cmd_help") {
           await this.handleHelp(query.message!);
@@ -548,6 +553,44 @@ export class TelegramAlertBot {
     }
   }
 
+  private async handleDex(msg: TelegramBot.Message): Promise<void> {
+    const chatId = msg.chat.id.toString();
+    await this.bot.sendMessage(chatId, "\u{1F50D} Scanning Uniswap V2 for volume spikes + new pairs...");
+
+    try {
+      const [spikes, newPairs] = await Promise.all([
+        dexProvider.fetchVolumeSpikes("ethereum"),
+        dexProvider.fetchNewPairs("ethereum"),
+      ]);
+
+      const parts: string[] = [];
+
+      if (spikes.length > 0) {
+        parts.push(`\u{1F4C8} <b>DEX Volume Spikes</b> (last ~1hr, >$50k)`);
+        for (const s of spikes.slice(0, 8)) {
+          const sym = s.token0Symbol !== "WETH" ? s.token0Symbol : s.token1Symbol;
+          parts.push(`  ${sym} — $${(s.volumeUsd/1000).toFixed(1)}k volume (${s.swaps24h} swaps)`);
+        }
+      }
+
+      if (newPairs.length > 0) {
+        parts.push(`\n\u{1F195} <b>New Pairs</b> (Uniswap V2)`);
+        for (const p of newPairs.slice(0, 5)) {
+          parts.push(`  ${p.token0.slice(0,10)}... / ${p.token1.slice(0,10)}...`);
+        }
+      }
+
+      if (parts.length === 0) {
+        parts.push("No significant DEX activity in the last hour. Market is quiet on Uniswap V2.");
+      }
+
+      await this.bot.sendMessage(chatId, parts.join("\n"),
+        { parse_mode: "HTML", reply_markup: this.mainMenuKeyboard() });
+    } catch (err: any) {
+      await this.bot.sendMessage(chatId, `DEX scan failed: ${err.message}`);
+    }
+  }
+
   // ─────────────────── CALLBACK HANDLERS ───────────────────
 
   private async handleExecCallback(query: TelegramBot.CallbackQuery): Promise<void> {
@@ -756,6 +799,7 @@ export class TelegramAlertBot {
           { text: "\u26D3 On-Chain", callback_data: "cmd_onchain" },
         ],
         [
+          { text: "\u{1F4C8} DEX", callback_data: "cmd_dex" },
           { text: "\u{1F4B0} P&L", callback_data: "cmd_pnl" },
         ],
         [

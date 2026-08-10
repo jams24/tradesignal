@@ -31,14 +31,14 @@ export class MemeScoutAgent {
     const signals: TradeSignal[] = [];
 
     try {
-      // Scan new pairs on Solana and Base
-      const [solanaPairs, basePairs] = await Promise.all([
-        dexProvider.fetchNewPairsSolana(),
-        dexProvider.fetchNewPairsEVM("base"),
+      // Scan new pairs on Ethereum and Base
+      const [ethPairs, basePairs] = await Promise.all([
+        dexProvider.fetchNewPairs("ethereum"),
+        dexProvider.fetchNewPairs("base"),
       ]);
 
-      for (const pair of solanaPairs) {
-        const candidate = await this.evaluateMemeCandidate(pair, "solana");
+      for (const pair of ethPairs) {
+        const candidate = await this.evaluateMemeCandidate(pair, "ethereum");
         if (candidate && candidate.score >= 50) candidates.push(candidate);
       }
 
@@ -76,16 +76,16 @@ export class MemeScoutAgent {
   }
 
   private async evaluateMemeCandidate(
-    pair: any,
-    chain: "solana" | "base",
+    pair: { token0: string; token1: string; pairAddress: string; txHash: string; timestamp: number; chain: string; dex: string },
+    chain: "ethereum" | "base" | "solana" | "bsc",
   ): Promise<MemeCandidate | null> {
     const candidate: MemeCandidate = {
-      symbol: pair.baseSymbol || pair.token0Symbol || "UNKNOWN",
-      tokenAddress: pair.baseToken || pair.token0 || "",
+      symbol: "TOKEN",
+      tokenAddress: pair.token0 || "",
       chain,
-      deployer: pair.deployer || "",
+      deployer: "",
       pairAddress: pair.pairAddress || "",
-      initialLiquidity: pair.initialLiquidity || 0,
+      initialLiquidity: 0,
       age: Date.now() - (pair.timestamp || Date.now()),
       holders: 0,
       deployerRisk: "MEDIUM",

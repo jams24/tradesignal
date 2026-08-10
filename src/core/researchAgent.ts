@@ -113,12 +113,11 @@ export class ResearchAgent {
 ON-CHAIN SPECIFIC CONTEXT:
 - Exchange Netflow: ${signal.exchangeNetflow ? "$" + (signal.exchangeNetflow / 1e6).toFixed(2) + "M" : "unknown"}
 - This signal was detected from REAL blockchain data (eth_getLogs on Ethereum mainnet)
-- Inflows = coins moving INTO exchanges (typically bearish — people deposit to sell)
-- Outflows = coins moving OUT of exchanges (typically bullish — people withdraw to hold/use in DeFi)
-- USDT/USDC flows to exchanges = buying power entering the market (bullish for crypto broadly)
-- USDT/USDC flows from exchanges = stablecoins leaving (neutral to slightly bearish)
-- If multiple large inflows to the same exchange in a short time window, this could indicate a coordinated sell or a market maker preparing liquidity
-- If multiple large outflows from exchanges detected, this suggests whale accumulation
+- Exchange flows:
+  - Outflows (withdrawals) from exchanges = typically bullish (whales accumulating, moving to cold storage/DeFi)
+  - Inflows (deposits) to exchanges = typically bearish (whales preparing to sell)
+- DEX volume spikes on Uniswap = often a precursor to a CEX listing or major announcement. These tokens pump BEFORE the news.
+- New Uniswap pairs = new token launches. Check for LP lock and deployer history.
 `;
     }
 
