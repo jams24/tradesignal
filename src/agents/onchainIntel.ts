@@ -2,6 +2,7 @@ import { logger } from "../utils/logger";
 import { config } from "../utils/config";
 import { onchainProvider } from "../data/providers/onchain";
 import { dexProvider } from "../data/providers/dex";
+import { solanaProvider } from "../data/providers/solana";
 import { prisma } from "../db/prisma";
 import type { TradeSignal, AgentResult, Chain } from "../types/signals";
 
@@ -137,10 +138,15 @@ export class OnchainIntelAgent {
         logger.info({ bridgeFlows: bridgeCount, whaleXfers: whaleCount }, "Bridge/whale data scanned");
       }
 
-      // 5. DEX volume spikes + new pairs
+      // 5. DEX volume spikes + new pairs (Ethereum + Solana)
       try {
-        const dexSpikes = await dexProvider.fetchVolumeSpikes("ethereum");
-        for (const spike of dexSpikes.slice(0, 10)) {
+        const [ethDexSpikes, ethPairs, solSwaps] = await Promise.all([
+          dexProvider.fetchVolumeSpikes("ethereum"),
+          dexProvider.fetchNewPairs("ethereum"),
+          solanaProvider.fetchDexActivity(),
+        ]);
+
+        for (const spike of ethDexSpikes.slice(0, 10)) {
           const tokenSymbol = spike.token0Symbol !== "WETH" && spike.token0Symbol !== "USDT" && spike.token0Symbol !== "USDC"
             ? spike.token0Symbol
             : spike.token1Symbol !== "WETH" && spike.token1Symbol !== "USDT" && spike.token1Symbol !== "USDC"
@@ -156,34 +162,62 @@ export class OnchainIntelAgent {
             direction: "long",
             confidence: 70,
             score: 65,
-            details: `DEX volume spike: $${(spike.volumeUsd / 1000).toFixed(0)}k on Uniswap V2 (${spike.swaps24h} swaps in ~1hr)`,
+            details: `ETH DEX volume: $${(spike.volumeUsd / 1000).toFixed(0)}k on Uniswap V2 (${spike.swaps24h} swaps/hr)`,
             valueUsd: spike.volumeUsd,
           });
         }
 
-        // 4. New Uniswap pairs (potential new token launches)
-        const newPairs = await dexProvider.fetchNewPairs("ethereum");
-        for (const pair of newPairs.slice(0, 5)) {
+        for (const pair of ethPairs.slice(0, 5)) {
           candidates.push({
             symbol: "NEW_TOKEN",
             chain: pair.chain,
-            signalType: "DEX_VOLUME",
+            signalType: "NEW_PAIR",
             direction: "long",
             confidence: 55,
             score: 50,
-            details: `New Uniswap V2 pair created: ${pair.token0.slice(0, 10)}.../${pair.token1.slice(0, 10)}...`,
+            details: `New Uniswap pair: ${pair.token0.slice(0, 10)}.../${pair.token1.slice(0, 10)}...`,
             valueUsd: 0,
           });
         }
 
-        if (dexSpikes.length + newPairs.length > 0) {
-          logger.info({ dexSpikes: dexSpikes.length, newPairs: newPairs.length }, "DEX data scanned");
+        // Solana DEX activity
+        for (const swap of solSwaps.slice(0, 5)) {
+          candidates.push({
+            symbol: swap.tokenOutSymbol,
+            chain: "solana",
+            signalType: "DEX_VOLUME",
+            direction: "long",
+            confidence: 65,
+            score: 60,
+            details: `Solana DEX: ${swap.tokenOutSymbol} swap detected (${swap.amount.toLocaleString()})`,
+            valueUsd: swap.volumeUsd || swap.amount,
+          });
+        }
+
+        // Solana large transfers
+        const solTransfers = await solanaProvider.fetchLargeTransfers();
+        for (const tx of solTransfers.slice(0, 5)) {
+          candidates.push({
+            symbol: tx.symbol,
+            chain: "solana",
+            signalType: "EXCHANGE_OUTFLOW",
+            direction: "long",
+            confidence: 60,
+            score: 55,
+            details: `Solana transfer: ${tx.amount.toLocaleString()} ${tx.symbol}`,
+            valueUsd: tx.valueUsd,
+          });
+        }
+
+        const total = ethDexSpikes.length + ethPairs.length + solSwaps.length + solTransfers.length;
+        if (total > 0) {
+          logger.info({ ethDex: ethDexSpikes.length, ethPairs: ethPairs.length, solDex: solSwaps.length, solTrans: solTransfers.length }, "DEX data scanned");
         }
       } catch (err: any) {
         logger.warn(`DEX scan failed: ${err.message}`);
       }
 
-      // Convert to signals
+      // 6. Convert to signals
       for (const c of candidates) {
         signals.push(this.buildSignal(c));
       }

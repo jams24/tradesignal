@@ -8,6 +8,7 @@ import { socialProvider } from "../data/providers/social";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import { onchainIntelAgent } from "../agents/onchainIntel";
 import { dexProvider } from "../data/providers/dex";
+import { solanaProvider } from "../data/providers/solana";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
@@ -555,35 +556,51 @@ export class TelegramAlertBot {
 
   private async handleDex(msg: TelegramBot.Message): Promise<void> {
     const chatId = msg.chat.id.toString();
-    await this.bot.sendMessage(chatId, "\u{1F50D} Scanning Uniswap V2 for volume spikes + new pairs...");
+    await this.bot.sendMessage(chatId, "\u{1F50D} Scanning Ethereum + Solana DEX...");
 
     try {
-      const [spikes, newPairs] = await Promise.all([
+      const [ethSpikes, ethPairs, solSwaps, solTransfers] = await Promise.all([
         dexProvider.fetchVolumeSpikes("ethereum"),
         dexProvider.fetchNewPairs("ethereum"),
+        solanaProvider.fetchDexActivity(),
+        solanaProvider.fetchLargeTransfers(),
       ]);
 
       const parts: string[] = [];
 
-      if (spikes.length > 0) {
-        parts.push(`\u{1F4C8} <b>DEX Volume Spikes</b> (last ~1hr, >$10k)`);
-        for (const s of spikes.slice(0, 8)) {
+      if (ethSpikes.length > 0) {
+        parts.push(`\u{1F4C8} <b>Ethereum DEX</b> (Uniswap V2, >$10k/hr)`);
+        for (const s of ethSpikes.slice(0, 5)) {
           const sym = s.token0Symbol !== "WETH" && s.token0Symbol.length < 10 ? s.token0Symbol
-                    : s.token1Symbol !== "WETH" && s.token1Symbol.length < 10 ? s.token1Symbol
-                    : s.token0Symbol;
-          parts.push(`  ${escapeHtml(sym)} — $${(s.volumeUsd/1000).toFixed(1)}k volume (${s.swaps24h} swaps)`);
+            : s.token1Symbol !== "WETH" && s.token1Symbol.length < 10 ? s.token1Symbol
+            : s.token0Symbol;
+          parts.push(`  ${escapeHtml(sym)} — $${(s.volumeUsd/1000).toFixed(1)}k (${s.swaps24h} swaps)`);
         }
       }
 
-      if (newPairs.length > 0) {
-        parts.push(`\n\u{1F195} <b>New Pairs</b> (Uniswap V2)`);
-        for (const p of newPairs.slice(0, 5)) {
-          parts.push(`  ${p.token0.slice(0,10)}... / ${p.token1.slice(0,10)}...`);
+      if (solSwaps.length > 0) {
+        parts.push(`\n\u{1F4C8} <b>Solana DEX</b> (Raydium)`);
+        for (const s of solSwaps.slice(0, 5)) {
+          parts.push(`  ${escapeHtml(s.tokenOutSymbol)} — ${s.amount.toLocaleString()} tokens`);
+        }
+      }
+
+      if (solTransfers.length > 0) {
+        parts.push(`\n\u{1F4B8} <b>Solana Transfers</b>`);
+        for (const t of solTransfers.slice(0, 3)) {
+          parts.push(`  ${escapeHtml(t.symbol)} — ${t.amount.toLocaleString()}`);
+        }
+      }
+
+      if (ethPairs.length > 0) {
+        parts.push(`\n\u{1F195} <b>New Pairs</b> (ETH)`);
+        for (const p of ethPairs.slice(0, 3)) {
+          parts.push(`  ${escapeHtml(p.token0.slice(0, 10))}... / ${escapeHtml(p.token1.slice(0, 10))}...`);
         }
       }
 
       if (parts.length === 0) {
-        parts.push("No significant DEX activity in the last hour. Market is quiet on Uniswap V2.");
+        parts.push("No significant DEX activity detected. Market is quiet on both Ethereum and Solana.");
       }
 
       await this.bot.sendMessage(chatId, parts.join("\n"),
