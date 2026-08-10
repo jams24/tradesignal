@@ -7,7 +7,7 @@ import { executionAgent } from "../agents/execution";
 import { technicalAlphaAgent } from "../agents/technicalAlpha";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
-import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeMd } from "../utils/formatting";
+import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
 
 const SIGNAL_COOLDOWNS = new Map<string, number>();
 
@@ -209,7 +209,7 @@ export class TelegramAlertBot {
       const lines = signals.map((s, i) => {
         const scores = safeJson<string[]>(s.sources, []);
         const confluence = scores.length >= 2 ? ` \u{1F91D}${scores.length} agents` : "";
-        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} <b>${escapeMd(s.symbol)}</b> ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${escapeMd(s.catalyst || "")}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
+        return `${i + 1}. ${TYPE_EMOJI[s.type] || "\u{1F4CC}"} <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()} ${confluence}\n   Score: ${s.score}/100 | Conf: ${s.confidence}/100 | Leverage: ${s.leverage}x\n   ${escapeHtml(s.catalyst || "")}\n   ${s.price ? "Price: $" + formatPrice(s.price) : ""} ${s.tp1 ? "| TP1: $" + formatPrice(s.tp1) : ""} ${s.stopLoss ? "| SL: $" + formatPrice(s.stopLoss) : ""}`;
       });
 
       await this.bot.sendMessage(msg.chat.id,
@@ -271,8 +271,8 @@ export class TelegramAlertBot {
 
       const top = result.signals.slice(0, 10);
       const lines = top.map((s, i) => {
-        const sigs = escapeMd((s.catalyst || "").split("|").slice(0, 3).join(" | "));
-        return `${i + 1}. <b>${escapeMd(s.symbol)}</b> ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
+        const sigs = escapeHtml((s.catalyst || "").split("|").slice(0, 3).join(" | "));
+        return `${i + 1}. <b>${escapeHtml(s.symbol)}</b> ${s.direction.toUpperCase()}\n   Score: ${s.score}/100 | ${sigs}\n   Price: $${formatPrice(s.price || 0)} | TP1: $${formatPrice(s.tp1 || 0)} | SL: $${formatPrice(s.stopLoss || 0)}`;
       });
 
       await this.bot.sendMessage(chatId,
@@ -478,7 +478,7 @@ export class TelegramAlertBot {
       }
 
       const lines = fundingSignals.slice(0, 10).map(s =>
-        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} <b>${escapeMd(s.symbol)}</b>\n${escapeMd(s.catalyst || "")}`
+        `${s.direction === "short" ? "\u{1F534}" : "\u{1F7E2}"} <b>${escapeHtml(s.symbol)}</b>\n${escapeHtml(s.catalyst || "")}`
       );
 
       await this.bot.sendMessage(chatId,
