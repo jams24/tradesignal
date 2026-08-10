@@ -43,7 +43,6 @@ const UNISWAP_V2_FACTORY = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
 const PAIR_CREATED_TOPIC = "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9";
 const SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822";
 
-// Known token addresses for symbol mapping
 const TOKEN_SYMBOLS: Record<string, string> = {
   "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "WETH",
   "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
@@ -55,8 +54,6 @@ const TOKEN_SYMBOLS: Record<string, string> = {
   "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9": "AAVE",
   "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce": "SHIB",
   "0x9f8f72aa9304c8b593d555f12ef6589cc3a579a2": "MKR",
-  "0x0d8775f648430679a709e98d2b0cb6250d2887ef": "BAT",
-  "0x111111111117dc0aa78b770fa6a738034120c302": "1INCH",
   "0x4fabb145d64652a948d72533023f6e7a623c7c53": "BUSD",
   "0x853d955acef822db058eb8505911ed77f175b99e": "FRAX",
 };
@@ -90,6 +87,23 @@ export class DexDataProvider {
   async getLatestBlock(chain: Chain): Promise<number> {
     const result = await this.rpcCall(chain, "eth_blockNumber", []);
     return parseInt(result?.result || "0x0", 16);
+  }
+
+  private async resolvePairTokens(chain: Chain, pairAddress: string): Promise<{ token0: string; token1: string } | null> {
+    try {
+      const [token0Resp, token1Resp] = await Promise.all([
+        this.rpcCall(chain, "eth_call", [{ to: pairAddress, data: "0x0dfe1681" }, "latest"]),
+        this.rpcCall(chain, "eth_call", [{ to: pairAddress, data: "0xd21220a7" }, "latest"]),
+      ]);
+
+      const token0 = token0Resp?.result ? "0x" + token0Resp.result.slice(26) : "";
+      const token1 = token1Resp?.result ? "0x" + token1Resp.result.slice(26) : "";
+
+      if (!token0 || !token1) return null;
+      return { token0, token1 };
+    } catch {
+      return null;
+    }
   }
 
   async fetchNewPairs(chain: Chain = "ethereum"): Promise<NewPairSignal[]> {
@@ -155,75 +169,63 @@ export class DexDataProvider {
       const logs = response?.result || [];
       if (!Array.isArray(logs)) return signals;
 
-      const pairVolumes = new Map<string, {
-        swapCount: number;
-        totalUsd: number;
-        token0: string;
-        token1: string;
-        sym0: string;
-        sym1: string;
-      }>();
+      const pairAddrs = new Set<string>();
+      const pairData = new Map<string, { swaps: number; amt0: number; amt1: number }>();
 
       for (const log of logs) {
-        if (pairVolumes.size > 100) break;
-
+        const addr = log.address;
+        pairAddrs.add(addr);
         const data = log.data || "0x";
         if (data.length < 258) continue;
 
-        const amount0 = parseInt("0x" + data.slice(2, 66), 16) || 0;
-        const amount1 = parseInt("0x" + data.slice(66, 130), 16) || 0;
-        const token0 = "0x" + (log.topics?.[1] || "0").slice(26).toLowerCase();
-        const token1 = "0x" + (log.topics?.[2] || "0").slice(26).toLowerCase();
-
-        const sym0 = TOKEN_SYMBOLS[token0];
-        const sym1 = TOKEN_SYMBOLS[token1];
-
-        // Only track pairs where at least one token has a known price
-        if (!sym0 && !sym1) continue;
-
-        // Estimate USD value
-        let volumeUsd = 0;
-        if (sym0 === "WETH" || sym0 === "ETH") {
-          volumeUsd = (amount0 / 1e18) * 2500;
-        } else if (sym0 === "USDT" || sym0 === "USDC" || sym0 === "DAI" || sym0 === "BUSD" || sym0 === "FRAX") {
-          volumeUsd = amount0 / 1e6;
-        } else if (sym1 === "WETH" || sym1 === "ETH") {
-          volumeUsd = (amount1 / 1e18) * 2500;
-        } else if (sym1 === "USDT" || sym1 === "USDC" || sym1 === "DAI" || sym1 === "BUSD" || sym1 === "FRAX") {
-          volumeUsd = amount1 / 1e6;
-        } else {
-          continue; // couldn't estimate
-        }
-
-        if (volumeUsd < 1000) continue;
-
-        const pairKey = token0 < token1 ? `${token0}_${token1}` : `${token1}_${token0}`;
-        const existing = pairVolumes.get(pairKey) || {
-          swapCount: 0, totalUsd: 0, token0, token1, sym0: sym0 || "", sym1: sym1 || "",
-        };
-
-        existing.swapCount++;
-        existing.totalUsd += volumeUsd;
-        pairVolumes.set(pairKey, existing);
+        const entry = pairData.get(addr) || { swaps: 0, amt0: 0, amt1: 0 };
+        entry.swaps++;
+        entry.amt0 += parseInt("0x" + data.slice(2, 66), 16) || 0;
+        entry.amt1 += parseInt("0x" + data.slice(66, 130), 16) || 0;
+        pairData.set(addr, entry);
       }
 
-      for (const [, data] of pairVolumes) {
-        if (data.totalUsd < 10000) continue; // >$10k in 1hr
+      const uniquePairs = [...pairAddrs].slice(0, 25);
+      const resolved = new Map<string, { t0: string; t1: string; s0: string; s1: string }>();
 
-        const primarySymbol = data.sym0 && data.sym0 !== "WETH" ? data.sym0 :
-                              data.sym1 && data.sym1 !== "WETH" ? data.sym1 :
-                              data.sym0 || resolveSymbol(data.token0);
+      for (const addr of uniquePairs) {
+        const tokens = await this.resolvePairTokens(chain, addr);
+        if (!tokens) continue;
+        const t0l = tokens.token0.toLowerCase();
+        const t1l = tokens.token1.toLowerCase();
+        const s0 = TOKEN_SYMBOLS[t0l] || "";
+        const s1 = TOKEN_SYMBOLS[t1l] || "";
+        if (!s0 && !s1) continue;
+        resolved.set(addr, { t0: t0l, t1: t1l, s0, s1 });
+      }
+
+      for (const [addr, data] of pairData) {
+        const tok = resolved.get(addr);
+        if (!tok || data.swaps < 3) continue;
+
+        let volUsd = 0;
+        if (tok.s0 === "WETH") volUsd += (data.amt0 / 1e18) * 2500;
+        else if (["USDT", "USDC", "DAI", "BUSD", "FRAX"].includes(tok.s0)) volUsd += data.amt0 / 1e6;
+
+        if (tok.s1 === "WETH") volUsd += (data.amt1 / 1e18) * 2500;
+        else if (["USDT", "USDC", "DAI", "BUSD", "FRAX"].includes(tok.s1)) volUsd += data.amt1 / 1e6;
+
+        if (volUsd < 10000) continue;
+
+        const primarySym = tok.s0 && !["WETH", "USDT", "USDC", "DAI"].includes(tok.s0) ? tok.s0
+          : tok.s1 && !["WETH", "USDT", "USDC", "DAI"].includes(tok.s1) ? tok.s1
+          : tok.s0 || resolveSymbol(tok.t0);
 
         signals.push({
           chain,
           dex: "uniswap_v2",
-          pairAddress: "",
-          token0: data.token0,
-          token1: data.token1,
-          token0Symbol: data.sym0 || resolveSymbol(data.token0),
-          token1Symbol: data.sym1 || resolveSymbol(data.token1),
-          volumeUsd: data.totalUsd,
-          swaps24h: data.swapCount,
+          pairAddress: addr,
+          token0: tok.t0,
+          token1: tok.t1,
+          token0Symbol: tok.s0 || resolveSymbol(tok.t0),
+          token1Symbol: tok.s1 || resolveSymbol(tok.t1),
+          volumeUsd: volUsd,
+          swaps24h: data.swaps,
           isNew: false,
           createdAt: Date.now(),
         });
