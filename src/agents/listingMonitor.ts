@@ -18,7 +18,8 @@ interface ListingCandidate {
 
 export class ListingMonitorAgent {
   private name = "LISTING_MONITOR";
-  private knownListings: Set<string> = new Set();
+  private knownPairs: Set<string> = new Set();
+  private seeded = false;
 
   async analyze(): Promise<AgentResult<TradeSignal>> {
     const startTime = Date.now();
@@ -26,9 +27,28 @@ export class ListingMonitorAgent {
     const signals: TradeSignal[] = [];
 
     try {
-      // 1. Check exchanges for new pairs via CCXT
       const exchangeIds: ExchangeId[] = ["binance", "mexc", "bybit", "bitget", "okx", "gate"];
 
+      // Seed known pairs on first run (load all existing markets without alerting)
+      if (!this.seeded) {
+        for (const exchangeId of exchangeIds) {
+          const exchange = cexProvider.getExchange(exchangeId);
+          if (!exchange) continue;
+          try {
+            for (const [symbol, market] of Object.entries(exchange.markets || {})) {
+              const m = market as any;
+              if (m.active && m.quote === "USDT") {
+                const key = `${exchangeId}:${m.swap ? "perp" : "spot"}:${symbol}`;
+                this.knownPairs.add(key);
+              }
+            }
+          } catch { /* skip */ }
+        }
+        this.seeded = true;
+        logger.info(`Seeded ${this.knownPairs.size} known pairs across ${exchangeIds.length} exchanges`);
+      }
+
+      // 1. Check for truly new pairs via CCXT
       for (const exchangeId of exchangeIds) {
         const exchange = cexProvider.getExchange(exchangeId);
         if (!exchange) continue;
@@ -36,26 +56,19 @@ export class ListingMonitorAgent {
         try {
           await exchange.loadMarkets(true);
           const markets = exchange.markets;
+          let newThisRun = 0;
 
           for (const [symbol, market] of Object.entries(markets || {})) {
             const m = market as any;
             if (!m.active) continue;
             if (!m.quote || m.quote !== "USDT") continue;
 
-            const key = `${exchangeId}:${m.swap ? "perp" : "spot"}:${symbol}`;
-            if (this.knownListings.has(key)) continue;
+            const marketType = m.swap ? "perp" : "spot";
+            const key = `${exchangeId}:${marketType}:${symbol}`;
 
-            // Check if this pair existed before (check DB)
-            const existing = await prisma.signal.findFirst({
-              where: {
-                symbol: m.base as string,
-                catalyst: { contains: exchangeId },
-              },
-            });
-
-            if (!existing) {
-              this.knownListings.add(key);
-              const marketType = m.swap ? "perp" : "spot";
+            if (!this.knownPairs.has(key)) {
+              this.knownPairs.add(key);
+              newThisRun++;
 
               candidates.push({
                 symbol: m.base as string,
@@ -66,21 +79,23 @@ export class ListingMonitorAgent {
                 source: "api",
                 confidence: marketType === "perp" ? 85 : 70,
               });
-
-              logger.info(`NEW LISTING: ${symbol} on ${exchangeId} (${marketType})`);
             }
+          }
+
+          if (newThisRun > 0) {
+            logger.info(`Found ${newThisRun} new pairs on ${exchangeId}`);
           }
         } catch (err: any) {
           logger.error(`Listing check failed for ${exchangeId}: ${err.message}`);
         }
       }
 
-      // 2. Check Binance announcement feed
+      // 2. Check Binance announcement feed for upcoming listings
       const binanceAnnouncements = await this.scrapeBinanceAnnouncements();
       for (const ann of binanceAnnouncements) {
         const key = `binance:announcement:${ann.symbol}`;
-        if (this.knownListings.has(key)) continue;
-        this.knownListings.add(key);
+        if (this.knownPairs.has(key)) continue;
+        this.knownPairs.add(key);
 
         candidates.push({
           symbol: ann.symbol,
@@ -94,25 +109,7 @@ export class ListingMonitorAgent {
         });
       }
 
-      // 3. Seed known listings (first run — load existing to avoid false alerts)
-      if (this.knownListings.size === 0) {
-        for (const exchangeId of exchangeIds) {
-          const exchange = cexProvider.getExchange(exchangeId);
-          if (!exchange) continue;
-
-          try {
-            for (const [symbol, market] of Object.entries(exchange.markets || {})) {
-              const m = market as any;
-              if (m.active) {
-                const key = `${exchangeId}:${m.swap ? "perp" : "spot"}:${symbol}`;
-                this.knownListings.add(key);
-              }
-            }
-          } catch { /* skip */ }
-        }
-      }
-
-      // Generate signals from new listings
+      // Generate signals from ACTUALLY new listings
       for (const c of candidates) {
         const signal = this.buildListingSignal(c);
         if (signal.confidence >= config.MIN_CONVICTION_SCORE) {
@@ -120,12 +117,14 @@ export class ListingMonitorAgent {
         }
       }
 
-      logger.info({
-        agent: this.name,
-        candidates: candidates.length,
-        signals: signals.length,
-        knownTotal: this.knownListings.size,
-      }, `${this.name} scan complete`);
+      if (candidates.length > 0 || signals.length > 0) {
+        logger.info({
+          agent: this.name,
+          newPairs: candidates.length,
+          signals: signals.length,
+          knownTotal: this.knownPairs.size,
+        }, `${this.name} scan complete`);
+      }
     } catch (err: any) {
       logger.error({ agent: this.name, err: err.message }, `${this.name} failed`);
     }
@@ -171,7 +170,7 @@ export class ListingMonitorAgent {
         }
       }
     } catch (err: any) {
-      logger.warn(`Binance announcement scrape failed: ${err.message}`);
+      // Silently fail — announcement pages often block scrapers
     }
 
     return results;
@@ -182,7 +181,7 @@ export class ListingMonitorAgent {
     const sourceLabel = c.source === "announcement" ? "official announcement" : "exchange API";
 
     return {
-      type: "LISTING", // Use SMART_MONEY type for priority listing alerts
+      type: "LISTING",
       symbol: c.symbol,
       chain: "unknown",
       direction: "long",
