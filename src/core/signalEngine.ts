@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { logger } from "../utils/logger";
 import { prisma } from "../db/prisma";
 import { config } from "../utils/config";
+import { SignalCache } from "../core/signalCache";
 import type { TradeSignal, AgentResult, SignalType } from "../types/signals";
 
 interface ConfluenceGroup {
@@ -56,14 +57,11 @@ export class SignalEngine extends EventEmitter {
       .sort((a, b) => b.score - a.score)
       .slice(0, 30);
 
-    // Persist signals (dedup by symbol — only first alert per symbol)
-    const seenSymbols = new Set<string>();
+    // Persist signals (dedup: skip if same symbol active within 4 hours)
     for (const signal of finalSignals) {
-      const key = `${signal.symbol}:${signal.direction}`;
-      if (seenSymbols.has(key)) continue;
-      seenSymbols.add(key);
-
       try {
+        const isDup = await SignalCache.isDuplicateSignal(signal.symbol);
+        if (isDup) continue;
         await prisma.signal.create({
           data: {
             type: signal.type,

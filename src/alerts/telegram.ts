@@ -10,6 +10,7 @@ import { onchainIntelAgent } from "../agents/onchainIntel";
 import { dexProvider } from "../data/providers/dex";
 import { solanaProvider } from "../data/providers/solana";
 import { performanceTracker } from "../core/performanceTracker";
+import { SignalCache } from "../core/signalCache";
 import type { TradeSignal } from "../types/signals";
 import { safeJson } from "../utils/json";
 import { formatPrice, formatPercent, formatUSD, formatCompact, truncateAddress, escapeHtml } from "../utils/formatting";
@@ -816,9 +817,13 @@ export class TelegramAlertBot {
   async sendSignalAlert(signal: TradeSignal): Promise<string | null> {
     if (!this.chatId) return null;
 
-    const lastSent = SIGNAL_COOLDOWNS.get(signal.symbol);
-    if (lastSent && Date.now() - lastSent < 30 * 60 * 1000) return null;
-    SIGNAL_COOLDOWNS.set(signal.symbol, Date.now());
+    // DB-backed cooldown: don't re-alert same symbol within 4 hours
+    const shouldSend = await SignalCache.shouldSendAlert(signal.symbol);
+    if (!shouldSend) return null;
+
+    // Daily cap: max 3 alerts per symbol per day
+    const canAlert = await SignalCache.canAlertToday(signal.symbol);
+    if (!canAlert) return null;
 
     const directionEmoji = signal.direction === "long" ? "\u{1F7E2} LONG" : "\u{1F534} SHORT";
     const typeEmoji = TYPE_EMOJI[signal.type] || "\u{1F4CC}";

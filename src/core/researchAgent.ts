@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { logger } from "../utils/logger";
 import { config } from "../utils/config";
 import { safeJson } from "../utils/json";
+import { SignalCache } from "../core/signalCache";
 import type { TradeSignal, AgentResult } from "../types/signals";
 
 interface ResearchResult {
@@ -58,7 +59,24 @@ export class ResearchAgent {
 
     for (const signal of topSignals) {
       try {
+        // Check cache first
+        const cached = await SignalCache.getCachedResearch(signal.symbol);
+        if (cached) {
+          resolvedSignals.push({
+            ...signal,
+            thesis: cached.thesis,
+            researchConviction: cached.conviction,
+            sources: [...signal.sources, "RESEARCH"],
+            confidence: Math.round((signal.confidence * 0.6) + (cached.conviction * 0.4)),
+            score: Math.round((signal.score * 0.5) + (cached.conviction * 0.5)),
+          });
+          continue;
+        }
+
         const research = await this.analyzeToken(signal);
+        // Cache the result
+        await SignalCache.cacheResearch(signal.symbol, research.thesis, research.convictionScore);
+
         const enrichedSignal: TradeSignal = {
           ...signal,
           thesis: research.thesis || signal.thesis,
