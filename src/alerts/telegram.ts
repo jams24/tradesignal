@@ -32,9 +32,27 @@ export class TelegramAlertBot {
     this.bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN, { polling: true });
     this.chatId = config.TELEGRAM_CHAT_ID;
     this.adminChatId = config.TELEGRAM_ADMIN_CHAT_ID || config.TELEGRAM_CHAT_ID;
+    this.loadSettings();
     this.registerCommands();
     this.registerCallbacks();
     logger.info("Telegram bot initialized with polling");
+  }
+
+  private async loadSettings(): Promise<void> {
+    try {
+      const setting = await prisma.setting.findUnique({ where: { key: "auto_orders" } });
+      if (setting) this.autoOrdersEnabled = setting.value === "true";
+    } catch { /* default ON */ }
+  }
+
+  private async saveSetting(key: string, value: string): Promise<void> {
+    try {
+      await prisma.setting.upsert({
+        where: { key },
+        update: { value },
+        create: { key, value },
+      });
+    } catch { /* silent */ }
   }
 
   // ─────────────────── COMMAND REGISTRY ───────────────────
@@ -103,6 +121,7 @@ export class TelegramAlertBot {
           await this.bot.answerCallbackQuery(query.id);
         } else if (data === "toggle_orders") {
           this.autoOrdersEnabled = !this.autoOrdersEnabled;
+          await this.saveSetting("auto_orders", this.autoOrdersEnabled ? "true" : "false");
           const status = this.autoOrdersEnabled ? "ON ✅" : "OFF ❌";
           await this.bot.answerCallbackQuery(query.id, { text: `Auto orders: ${status}` });
           try {

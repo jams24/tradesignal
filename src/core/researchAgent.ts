@@ -54,7 +54,7 @@ export class ResearchAgent {
       .filter(s => s.type !== "ONCHAIN")
       .sort((a, b) => b.score - a.score);
 
-    const topSignals = [...onchainSignals, ...otherSignals].slice(0, 15);
+    const topSignals = [...onchainSignals, ...otherSignals].slice(0, 5);
 
     for (const signal of topSignals) {
       try {

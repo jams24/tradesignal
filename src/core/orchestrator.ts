@@ -101,8 +101,8 @@ class Orchestrator {
       await this.runFullPipeline();
     }, 10 * 60 * 1000));
 
-    // Initial runs
-    setTimeout(() => this.runFullPipeline(), 5000);
+    // Initial run — delay 3 minutes to avoid burning API credits on frequent restarts
+    setTimeout(() => this.runFullPipeline(), 3 * 60 * 1000);
   }
 
   private async runAgent(name: string, agent: { analyze: () => Promise<AgentResult> }): Promise<void> {
