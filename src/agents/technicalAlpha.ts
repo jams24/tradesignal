@@ -242,15 +242,28 @@ export class TechnicalAlphaAgent {
 
         if (Math.abs(rate) < 0.0015) continue;
 
-        // Fetch current price for TP/SL
+        // Fetch current price from most liquid exchange (Binance) for accurate entry
         let price = 0;
         try {
-          const ex = cexProvider.getExchange(exchange);
-          if (ex) {
-            const ticker = await ex.fetchTicker(symbol);
-            price = ticker.last || 0;
+          // Try Binance first (most liquid, most accurate prices)
+          const binance = cexProvider.getExchange("binance");
+          if (binance) {
+            const t = await binance.fetchTicker(`${cleanSymbol}/USDT`);
+            price = t.last || 0;
           }
-        } catch { /* best effort */ }
+        } catch {
+          // Fall back to original exchange
+          try {
+            const ex = cexProvider.getExchange(exchange);
+            if (ex) {
+              const t = await ex.fetchTicker(symbol);
+              price = t.last || 0;
+            }
+          } catch { /* best effort */ }
+        }
+
+        // Skip if price seems obviously wrong (very low relative to normal)
+        if (price > 0 && price < 0.000001) price = 0;
 
         const direction: Direction = rate > 0.002 ? "short" : "long";
         const catalyst = rate > 0.002
